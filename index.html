@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>四级词库 · 错词抄写本</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#F5F2E6">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="错词抄写本">
+<style>
+  :root{
+    --paper: #F5F2E6;
+    --paper-card: #FFFEF9;
+    --rule-blue: #B7C6DA;
+    --margin-red: #B23A2E;
+    --ink: #26314A;
+    --ink-soft: #5B6B84;
+    --green: #3E7A5C;
+    --green-bg: #E7F1EC;
+    --red-bg: #F7E7E4;
+    --stamp-gold: #A6742E;
+    --shadow: 0 2px 10px rgba(38,49,74,0.08);
+    --font-display: "Songti SC", "STSong", Georgia, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: "SF Mono", "Consolas", "Courier New", monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    background: var(--paper);
+    font-family: var(--font-body);
+    color: var(--ink);
+    min-height:100vh;
+    padding: 28px 16px 60px;
+  }
+  .wrap{max-width:640px;margin:0 auto;}
+
+  /* header */
+  .cover{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:18px 22px;background:var(--paper-card);
+    border-radius:10px;box-shadow:var(--shadow);
+    border:1px solid rgba(38,49,74,0.08);
+    margin-bottom:16px;
+  }
+  .cover h1{
+    font-family:var(--font-display);
+    font-size:22px;margin:0;font-weight:700;letter-spacing:0.5px;
+  }
+  .cover .sub{font-size:12px;color:var(--ink-soft);margin-top:4px;letter-spacing:1px;}
+  .stamp{
+    width:58px;height:58px;border-radius:50%;
+    border:2.5px solid var(--margin-red);color:var(--margin-red);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    transform:rotate(-8deg);
+    font-family:var(--font-display);
+    flex-shrink:0;
+    background: rgba(178,58,46,0.03);
+  }
+  .stamp .num{font-size:18px;font-weight:700;line-height:1;}
+  .stamp .lbl{font-size:9px;line-height:1;margin-top:2px;letter-spacing:1px;}
+
+  /* tally */
+  .tally{
+    display:flex;gap:0;background:var(--paper-card);
+    border-radius:10px;box-shadow:var(--shadow);
+    border:1px solid rgba(38,49,74,0.08);
+    margin-bottom:16px;overflow:hidden;
+  }
+  .tally .item{flex:1;text-align:center;padding:12px 6px;border-right:1px dashed rgba(38,49,74,0.15);}
+  .tally .item:last-child{border-right:none;}
+  .tally .item .n{font-size:20px;font-weight:700;font-family:var(--font-display);}
+  .tally .item .l{font-size:11px;color:var(--ink-soft);margin-top:2px;}
+
+  /* tabs */
+  .tabs{display:flex;gap:4px;margin-bottom:14px;}
+  .tab-btn{
+    flex:1;padding:10px 4px;text-align:center;border:none;cursor:pointer;
+    background:transparent;color:var(--ink-soft);font-family:var(--font-body);
+    font-size:13px;font-weight:600;border-bottom:3px solid transparent;
+    transition:all .15s;
+  }
+  .tab-btn.active{color:var(--ink);border-bottom-color:var(--margin-red);}
+
+  /* ruled paper panel */
+  .paper{
+    position:relative;
+    background:
+      repeating-linear-gradient(var(--paper-card) 0px, var(--paper-card) 31px, var(--rule-blue) 32px);
+    border-radius:10px;box-shadow:var(--shadow);
+    border:1px solid rgba(38,49,74,0.08);
+    padding:24px 24px 24px 40px;
+    min-height:340px;
+  }
+  .paper::before{
+    content:"";position:absolute;top:0;bottom:0;left:26px;width:1.5px;
+    background:var(--margin-red);opacity:0.55;
+  }
+
+  /* study card */
+  .flashcard{text-align:center;padding:20px 0 8px;}
+  .fc-mode{font-size:11px;letter-spacing:2px;color:var(--ink-soft);margin-bottom:14px;text-transform:uppercase;}
+  .fc-word{font-family:var(--font-display);font-size:34px;font-weight:700;margin:6px 0 18px;word-break:break-word;}
+  .fc-zh{font-family:var(--font-display);font-size:24px;font-weight:700;margin:6px 0 4px;}
+  .fc-example{font-size:13px;color:var(--ink-soft);font-style:italic;margin-bottom:10px;min-height:18px;}
+  .fc-reveal{font-size:20px;font-weight:700;color:var(--ink);margin:8px 0;min-height:28px;}
+
+  input[type=text]{
+    font-family:var(--font-mono);font-size:18px;padding:10px 14px;
+    border:1.5px solid var(--rule-blue);border-radius:6px;
+    width:100%;max-width:280px;text-align:center;color:var(--ink);
+    background:#fff;
+  }
+  input[type=text]:focus{outline:none;border-color:var(--margin-red);}
+
+  .btn{
+    font-family:var(--font-body);font-weight:600;font-size:14px;
+    border:none;border-radius:6px;padding:10px 20px;cursor:pointer;
+    transition:transform .1s;
+  }
+  .btn:active{transform:scale(0.97);}
+  .btn-primary{background:var(--ink);color:#fff;}
+  .btn-green{background:var(--green);color:#fff;}
+  .btn-red{background:var(--margin-red);color:#fff;}
+  .btn-ghost{background:transparent;color:var(--ink-soft);border:1.5px solid rgba(38,49,74,0.2);}
+  .btn-row{display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap;}
+
+  .feedback{margin-top:12px;font-size:14px;font-weight:600;min-height:20px;}
+  .feedback.correct{color:var(--green);}
+  .feedback.wrong{color:var(--margin-red);}
+
+  /* copy task (田字格) */
+  .copy-title{font-size:14px;font-weight:700;margin-bottom:4px;}
+  .copy-sub{font-size:12px;color:var(--ink-soft);margin-bottom:16px;}
+  .grid-row{display:flex;gap:6px;margin-bottom:14px;align-items:center;flex-wrap:wrap;}
+  .grid-row .rep-label{width:20px;font-size:12px;color:var(--ink-soft);font-weight:700;}
+  .cell{
+    width:34px;height:34px;border:1.5px solid var(--ink-soft);border-radius:3px;
+    position:relative;display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-mono);font-size:16px;font-weight:700;background:#fff;
+  }
+  .cell::before,.cell::after{content:"";position:absolute;background:rgba(91,107,132,0.25);}
+  .cell::before{left:50%;top:0;bottom:0;width:1px;}
+  .cell::after{top:50%;left:0;right:0;height:1px;}
+  .cell.done{border-color:var(--green);color:var(--green);background:var(--green-bg);}
+  .cell.pending{border-color:rgba(38,49,74,0.15);color:transparent;}
+  .rep-mark{width:22px;text-align:center;font-size:16px;}
+  .rep-mark.ok{color:var(--green);}
+  .copy-input-wrap{margin-top:10px;}
+
+  /* lists */
+  .word-row{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:10px 4px;border-bottom:1px dashed rgba(38,49,74,0.15);
+    font-size:14px;gap:8px;
+  }
+  .word-row:last-child{border-bottom:none;}
+  .word-row .en{font-family:var(--font-mono);font-weight:700;min-width:90px;}
+  .word-row .zh{color:var(--ink-soft);flex:1;}
+  .word-row .cnt{color:var(--margin-red);font-weight:700;font-size:12px;}
+  .word-row .mini-btn{
+    font-size:11px;padding:5px 10px;border-radius:5px;border:1px solid var(--margin-red);
+    background:transparent;color:var(--margin-red);cursor:pointer;
+  }
+  .empty{text-align:center;color:var(--ink-soft);padding:60px 10px;font-size:14px;}
+
+  /* import / settings */
+  textarea{
+    width:100%;min-height:120px;font-family:var(--font-mono);font-size:13px;
+    padding:12px;border:1.5px solid var(--rule-blue);border-radius:6px;resize:vertical;
+    background:#fff;color:var(--ink);
+  }
+  .hint{font-size:12px;color:var(--ink-soft);line-height:1.6;margin-bottom:10px;}
+  .field{margin-bottom:18px;}
+  .field label{display:block;font-size:13px;font-weight:700;margin-bottom:6px;}
+  .msg{font-size:13px;margin-top:8px;padding:8px 10px;border-radius:6px;}
+  .msg.ok{background:var(--green-bg);color:var(--green);}
+  .msg.warn{background:var(--red-bg);color:var(--margin-red);}
+  .num-input{width:70px;font-family:var(--font-mono);font-size:15px;padding:6px 10px;border:1.5px solid var(--rule-blue);border-radius:6px;text-align:center;}
+  .checkline{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;}
+  .loading{text-align:center;padding:80px 10px;color:var(--ink-soft);font-size:14px;}
+  .warn-banner{
+    background:var(--red-bg);color:var(--margin-red);border:1px solid var(--margin-red);
+    border-radius:8px;padding:10px 14px;font-size:12.5px;line-height:1.6;margin-bottom:14px;
+  }
+  .daily-bar{margin-bottom:12px;}
+  .daily-text{font-size:12px;color:var(--ink-soft);margin-bottom:5px;text-align:center;}
+  .daily-track{height:6px;background:rgba(38,49,74,0.1);border-radius:4px;overflow:hidden;}
+  .daily-fill{height:100%;background:var(--green);border-radius:4px;transition:width .3s;}
+  .done-screen{text-align:center;padding:50px 10px;}
+  .done-screen .big{font-size:36px;margin-bottom:10px;}
+  .done-screen .msg-line{font-size:14px;color:var(--ink-soft);margin-bottom:18px;}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="loading">正在打开错词本…</div></div>
+
+<script>
+(function(){
+  var STORAGE_KEY = 'vocab-app-state-v1';
+
+  var DEMO_WORDS = [
+    ['abandon','v. 放弃；抛弃','She refused to abandon her dream.'],
+    ['abundant','adj. 丰富的；充裕的','The region has abundant natural resources.'],
+    ['accompany','v. 陪伴；伴随','He asked her to accompany him to the party.'],
+    ['accumulate','v. 积累；积聚','Dust had accumulated on the shelf.'],
+    ['accurate','adj. 准确的','The weather forecast turned out to be accurate.'],
+    ['accuse','v. 指责；控告','They accused him of lying.'],
+    ['achieve','v. 实现；达到','She worked hard to achieve her goals.'],
+    ['acknowledge','v. 承认；致谢','He acknowledged his mistake.'],
+    ['acquire','v. 获得；学到','Children acquire language very quickly.'],
+    ['adapt','v. 适应；改编','Animals adapt to their environment over time.'],
+    ['adequate','adj. 足够的；适当的','The salary is barely adequate.'],
+    ['adjust','v. 调整；适应','It took time to adjust to the new schedule.'],
+    ['altitude','n. 海拔；高度','The plane reached its cruising altitude.'],
+    ['amateur','n./adj. 业余爱好者；业余的','He is a talented amateur photographer.'],
+    ['ambiguous','adj. 模糊的；模棱两可的','The instructions in the manual were ambiguous.'],
+    ['analyze','v. 分析','Scientists analyzed the data carefully.'],
+    ['annual','adj. 每年的；年度的','The company holds an annual meeting in March.'],
+    ['anticipate','v. 预料；期待','We anticipate strong demand this year.'],
+    ['apparent','adj. 明显的','It became apparent that he was lying.'],
+    ['appreciate','v. 欣赏；感激','I really appreciate your help today.']
+  ];
+
+  var REVIEW_INTERVALS = [1, 2, 4, 7, 15, 30]; // days — simplified Ebbinghaus-style schedule
+
+  function todayStr(){ return new Date().toISOString().slice(0,10); }
+  function addDays(dateStr, n){
+    var d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0,10);
+  }
+  function makeWord(en, zh, example){
+    return {
+      id: en.toLowerCase(), en: en, zh: zh, example: example||'',
+      wrongCount: 0,
+      introducedDate: null,   // null = never studied yet
+      reviewStage: 0,         // index into REVIEW_INTERVALS, how many successful reviews passed
+      nextReviewDate: null
+    };
+  }
+  function defaultState(){
+    return {
+      words: DEMO_WORDS.map(function(w){ return makeWord(w[0], w[1], w[2]); }),
+      settings: { threshold: 2, modeEn2Zh: true, modeZh2En: true, dailyNewGoal: 30 },
+      streakDays: 0,
+      lastActiveDate: null,
+      dailyProgress: { date: null, newIntroducedCount: 0, reviewsDoneToday: 0 }
+    };
+  }
+
+  var state = null;       // persisted data
+  var ui = {               // transient UI state, not persisted
+    activeTab: 'study',
+    currentWord: null,
+    currentMode: null,
+    revealAnswer: false,
+    feedback: null,        // {type:'correct'|'wrong', text}
+    copyTask: null,        // {word, repsDone:[bool,bool,bool], activeRep, error}
+    importMsg: null,
+    importDraftText: '',
+    storageAvailable: true,
+    bonusMode: false
+  };
+
+  // Local storage shim (offline-capable) — mimics the same async get/set interface
+  // the rest of the app already uses, so the app logic below needed no other changes.
+  var localStore = {
+    get: function(key){
+      return new Promise(function(resolve, reject){
+        try{
+          var v = localStorage.getItem(key);
+          if(v === null){ reject(new Error('not found')); return; }
+          resolve({ key: key, value: v });
+        }catch(e){ reject(e); }
+      });
+    },
+    set: function(key, value){
+      return new Promise(function(resolve, reject){
+        try{
+          localStorage.setItem(key, value);
+          resolve({ key: key, value: value });
+        }catch(e){ reject(e); }
+      });
+    }
+  };
+
+  var storageOK = (function(){
+    try{
+      var t = '__vocab_app_probe__';
+      localStorage.setItem(t, '1');
+      localStorage.removeItem(t);
+      return true;
+    }catch(e){ return false; }
+  })();
+
+  async function loadState(){
+    if(!storageOK){ state = defaultState(); return; }
+    try{
+      var res = await localStore.get(STORAGE_KEY);
+      if(res && res.value){
+        var parsed = JSON.parse(res.value);
+        if(parsed && Array.isArray(parsed.words) && parsed.words.length){
+          state = parsed;
+          migrateState();
+          return;
+        }
+      }
+    }catch(e){ /* no data yet, fall through to default */ }
+    state = defaultState();
+    await persist();
+  }
+
+  function migrateState(){
+    if(!state.settings) state.settings = {};
+    if(state.settings.threshold == null) state.settings.threshold = 2;
+    if(state.settings.modeEn2Zh == null) state.settings.modeEn2Zh = true;
+    if(state.settings.modeZh2En == null) state.settings.modeZh2En = true;
+    if(state.settings.dailyNewGoal == null) state.settings.dailyNewGoal = 30;
+    state.words.forEach(function(w){
+      if(w.introducedDate === undefined) w.introducedDate = (w.correctStreak ? todayStr() : null);
+      if(w.reviewStage === undefined) w.reviewStage = 0;
+      if(w.nextReviewDate === undefined) w.nextReviewDate = w.introducedDate ? todayStr() : null;
+      if(w.wrongCount == null) w.wrongCount = 0;
+      delete w.correctStreak;
+    });
+    if(!state.dailyProgress) state.dailyProgress = { date:null, newIntroducedCount:0, reviewsDoneToday:0 };
+  }
+
+  function ensureDailyProgress(){
+    var today = todayStr();
+    if(!state.dailyProgress || state.dailyProgress.date !== today){
+      state.dailyProgress = { date: today, newIntroducedCount: 0, reviewsDoneToday: 0 };
+    }
+  }
+
+  async function persist(){
+    if(!storageOK) return;
+    try{
+      await localStore.set(STORAGE_KEY, JSON.stringify(state));
+    }catch(e){
+      console.error('保存失败', e);
+    }
+  }
+
+  function updateStreak(){
+    var today = todayStr();
+    if(state.lastActiveDate === today) return;
+    if(state.lastActiveDate){
+      var prev = new Date(state.lastActiveDate);
+      var diffDays = Math.round((new Date(today) - prev) / 86400000);
+      state.streakDays = (diffDays === 1) ? (state.streakDays||0) + 1 : 1;
+    } else {
+      state.streakDays = 1;
+    }
+    state.lastActiveDate = today;
+  }
+
+  function wordStatus(w){
+    if(!w.introducedDate) return 'new';
+    if(w.reviewStage >= REVIEW_INTERVALS.length) return 'mastered';
+    return 'learning';
+  }
+  function counts(){
+    var c = { new:0, learning:0, mastered:0, wrongbook:0 };
+    state.words.forEach(function(w){
+      c[wordStatus(w)]++;
+      if(w.wrongCount > 0) c.wrongbook++;
+    });
+    return c;
+  }
+
+  // pool=='today': due reviews + today's fresh new-word quota (normal study flow)
+  // pool=='bonus': any already-introduced word, ignoring due dates (extra optional practice)
+  function pickWord(poolMode){
+    ensureDailyProgress();
+    var today = todayStr();
+    if(poolMode === 'bonus'){
+      var bonusPool = state.words.filter(function(w){ return w.introducedDate; });
+      if(bonusPool.length === 0) return null;
+      return bonusPool[Math.floor(Math.random()*bonusPool.length)];
+    }
+    var dueWords = state.words.filter(function(w){
+      return w.introducedDate && w.nextReviewDate && w.nextReviewDate <= today;
+    });
+    var remainingQuota = Math.max(0, (state.settings.dailyNewGoal||0) - state.dailyProgress.newIntroducedCount);
+    var newWords = remainingQuota > 0
+      ? state.words.filter(function(w){ return !w.introducedDate; }).slice(0, remainingQuota)
+      : [];
+    var pool = dueWords.concat(newWords);
+    if(pool.length === 0) return null;
+    var weighted = [];
+    pool.forEach(function(w){ for(var i=0;i<(w.wrongCount+1);i++) weighted.push(w); });
+    return weighted[Math.floor(Math.random()*weighted.length)];
+  }
+
+  function pickMode(){
+    var modes = [];
+    if(state.settings.modeEn2Zh) modes.push('en2zh');
+    if(state.settings.modeZh2En) modes.push('zh2en');
+    if(modes.length === 0) modes = ['en2zh'];
+    return modes[Math.floor(Math.random()*modes.length)];
+  }
+
+  function nextCard(){
+    ui.feedback = null;
+    ui.revealAnswer = false;
+    var w = pickWord(ui.bonusMode ? 'bonus' : 'today');
+    ui.currentWord = w;
+    ui.currentMode = w ? pickMode() : null;
+  }
+
+  async function grade(word, correct){
+    ensureDailyProgress();
+    var today = todayStr();
+    var wasNew = !word.introducedDate;
+    if(wasNew){
+      word.introducedDate = today;
+      state.dailyProgress.newIntroducedCount++;
+    } else if(!ui.bonusMode){
+      state.dailyProgress.reviewsDoneToday++;
+    }
+    if(correct){
+      var s = word.reviewStage || 0;
+      if(s < REVIEW_INTERVALS.length){
+        word.nextReviewDate = addDays(today, REVIEW_INTERVALS[s]);
+        word.reviewStage = s + 1;
+      } else {
+        word.nextReviewDate = addDays(today, 60); // occasional booster for already-mastered words
+      }
+      ui.feedback = { type:'correct', text:'✓ 答对了' };
+    } else {
+      word.reviewStage = 0;
+      word.nextReviewDate = addDays(today, REVIEW_INTERVALS[0]);
+      word.wrongCount = (word.wrongCount||0) + 1;
+      ui.feedback = { type:'wrong', text:'✗ 答错了 · 正确答案：' + word.en };
+    }
+    await persist();
+    render();
+    if(!correct && word.wrongCount >= state.settings.threshold){
+      setTimeout(function(){ startCopyTask(word); }, 700);
+    } else {
+      setTimeout(function(){ nextCard(); render(); }, correct ? 500 : 1300);
+    }
+  }
+
+  function startCopyTask(word){
+    ui.copyTask = { word: word, repsDone: [false,false,false], activeRep: 0, error:false, input:'' };
+    render();
+  }
+
+  async function finishCopyTask(){
+    var word = ui.copyTask.word;
+    var today = todayStr();
+    word.wrongCount = 0;
+    word.reviewStage = 0;
+    word.nextReviewDate = addDays(today, REVIEW_INTERVALS[0]);
+    ui.copyTask = null;
+    await persist();
+    nextCard();
+    render();
+  }
+
+  function submitCopyRep(value){
+    var ct = ui.copyTask;
+    var target = ct.word.en.toLowerCase();
+    if(value.trim().toLowerCase() === target){
+      ct.repsDone[ct.activeRep] = true;
+      ct.error = false;
+      if(ct.repsDone.every(function(x){return x;})){
+        finishCopyTask();
+        return;
+      }
+      ct.activeRep++;
+    } else {
+      ct.error = true;
+    }
+    render();
+  }
+
+  // ---------- rendering ----------
+  function el(html){ var d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild; }
+  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  function todayStats(){
+    ensureDailyProgress();
+    var today = todayStr();
+    var dueRemaining = state.words.filter(function(w){
+      return w.introducedDate && w.nextReviewDate && w.nextReviewDate <= today;
+    }).length;
+    return {
+      newDone: state.dailyProgress.newIntroducedCount,
+      newGoal: state.settings.dailyNewGoal || 0,
+      dueRemaining: dueRemaining
+    };
+  }
+
+  function renderHeader(c){
+    var t = todayStats();
+    var pct = t.newGoal > 0 ? Math.min(100, Math.round(t.newDone / t.newGoal * 100)) : 0;
+    return '' +
+    '<div class="cover">' +
+      '<div><h1>四级词库 · 错词抄写本</h1><div class="sub">背单词 · 错了就罚抄</div></div>' +
+      '<div class="stamp"><div class="num">' + (state.streakDays||0) + '</div><div class="lbl">连续天数</div></div>' +
+    '</div>' +
+    '<div class="daily-bar">' +
+      '<div class="daily-text">今日新词 ' + t.newDone + '/' + t.newGoal + ' &nbsp;·&nbsp; 待复习 ' + t.dueRemaining + '</div>' +
+      '<div class="daily-track"><div class="daily-fill" style="width:' + pct + '%"></div></div>' +
+    '</div>' +
+    '<div class="tally">' +
+      '<div class="item"><div class="n">' + c.new + '</div><div class="l">新词</div></div>' +
+      '<div class="item"><div class="n">' + c.learning + '</div><div class="l">学习中</div></div>' +
+      '<div class="item"><div class="n">' + c.mastered + '</div><div class="l">已掌握</div></div>' +
+      '<div class="item"><div class="n">' + c.wrongbook + '</div><div class="l">错词本</div></div>' +
+    '</div>';
+  }
+
+  function renderTabs(){
+    var tabs = [['study','背单词'],['wrongbook','错词本'],['import','导入词库'],['settings','设置']];
+    return '<div class="tabs">' + tabs.map(function(t){
+      return '<button class="tab-btn' + (ui.activeTab===t[0]?' active':'') + '" data-tab="' + t[0] + '">' + t[1] + '</button>';
+    }).join('') + '</div>';
+  }
+
+  function renderStudyTab(){
+    if(ui.copyTask) return renderCopyTask();
+    if(state.words.length === 0){
+      return '<div class="paper"><div class="empty">词库是空的，先去"导入词库"添加单词吧。</div></div>';
+    }
+    if(!ui.currentWord) nextCard();
+    var w = ui.currentWord;
+    if(!w){
+      if(ui.bonusMode){
+        return '<div class="paper"><div class="empty">已经没有学过的词可以额外练习啦，明天再来吧～</div></div>';
+      }
+      return '<div class="paper"><div class="done-screen">' +
+        '<div class="big">🎉</div>' +
+        '<div class="msg-line">今天的新词和复习任务都完成啦</div>' +
+        '<button class="btn btn-ghost" data-act="bonus-start">还想再多练几个（不计入今日目标）</button>' +
+      '</div></div>';
+    }
+    var mode = ui.currentMode;
+    var body = '';
+    if(mode === 'en2zh'){
+      body += '<div class="fc-mode">英译中</div>';
+      body += '<div class="fc-word">' + escapeHtml(w.en) + '</div>';
+      if(!ui.revealAnswer){
+        body += '<div class="btn-row"><button class="btn btn-primary" data-act="reveal">显示释义</button></div>';
+      } else {
+        body += '<div class="fc-reveal">' + escapeHtml(w.zh) + '</div>';
+        body += '<div class="fc-example">' + escapeHtml(w.example) + '</div>';
+        if(!ui.feedback){
+          body += '<div class="btn-row">' +
+            '<button class="btn btn-green" data-act="self-correct">我答对了</button>' +
+            '<button class="btn btn-red" data-act="self-wrong">我答错了</button>' +
+          '</div>';
+        }
+      }
+    } else {
+      body += '<div class="fc-mode">中译英</div>';
+      body += '<div class="fc-word">' + escapeHtml(w.zh) + '</div>';
+      body += '<div class="fc-example">' + escapeHtml(w.example) + '</div>';
+      if(!ui.feedback){
+        body += '<div class="btn-row"><input type="text" id="spell-input" placeholder="拼写英文单词" autocomplete="off"></div>';
+        body += '<div class="btn-row"><button class="btn btn-primary" data-act="submit-spell">提交</button></div>';
+      }
+    }
+    if(ui.feedback){
+      body += '<div class="feedback ' + ui.feedback.type + '">' + escapeHtml(ui.feedback.text) + '</div>';
+    }
+    return '<div class="paper"><div class="flashcard">' + body + '</div></div>';
+  }
+
+  function renderCopyTask(){
+    var ct = ui.copyTask;
+    var word = ct.word;
+    var letters = word.en.split('');
+    var rows = '';
+    for(var r=0;r<3;r++){
+      var mark = ct.repsDone[r] ? '<span class="rep-mark ok">✓</span>' : '<span class="rep-mark">&nbsp;</span>';
+      var cells = '';
+      if(ct.repsDone[r]){
+        letters.forEach(function(ch){ cells += '<div class="cell done">' + escapeHtml(ch) + '</div>'; });
+      } else if(r === ct.activeRep){
+        var typed = (ct.input||'');
+        letters.forEach(function(ch, i){
+          var shown = typed[i] ? escapeHtml(typed[i]) : '';
+          cells += '<div class="cell' + (typed[i] ? '' : ' pending') + '">' + shown + '</div>';
+        });
+      } else {
+        letters.forEach(function(){ cells += '<div class="cell pending"></div>'; });
+      }
+      rows += '<div class="grid-row" data-rep="' + r + '"><div class="rep-label">' + (r+1) + '</div>' + cells + mark + '</div>';
+    }
+    var errMsg = ct.error ? '<div class="msg warn">拼错啦，再试一次这一遍～</div>' : '';
+    return '<div class="paper">' +
+      '<div class="copy-title">这个词错太多次了，工整抄写 3 遍：<span style="font-family:var(--font-mono)">' + escapeHtml(word.en) + '</span></div>' +
+      '<div class="copy-sub">' + escapeHtml(word.zh) + ' · 抄对才算一遍，抄错不计数</div>' +
+      rows +
+      errMsg +
+      '<div class="copy-input-wrap"><input type="text" id="copy-input" placeholder="在此输入，回车确认" autocomplete="off"></div>' +
+    '</div>';
+  }
+
+  function renderWrongBookTab(){
+    var list = state.words.filter(function(w){ return w.wrongCount>0; })
+      .sort(function(a,b){ return b.wrongCount - a.wrongCount; });
+    if(list.length === 0){
+      return '<div class="paper"><div class="empty">错词本是空的，继续保持～</div></div>';
+    }
+    var rows = list.map(function(w){
+      return '<div class="word-row">' +
+        '<span class="en">' + escapeHtml(w.en) + '</span>' +
+        '<span class="zh">' + escapeHtml(w.zh) + '</span>' +
+        '<span class="cnt">错' + w.wrongCount + '次</span>' +
+        '<button class="mini-btn" data-act="practice" data-id="' + escapeHtml(w.id) + '">抄写巩固</button>' +
+      '</div>';
+    }).join('');
+    return '<div class="paper">' + rows + '</div>';
+  }
+
+  function renderImportTab(){
+    var msg = ui.importMsg ? '<div class="msg ' + ui.importMsg.type + '">' + escapeHtml(ui.importMsg.text) + '</div>' : '';
+    return '<div class="paper">' +
+      '<div class="field">' +
+        '<label>上传词表文件（.txt / .csv，词多的时候用这个更快）</label>' +
+        '<div class="hint">选好文件后会自动填入下面的文本框，确认内容没问题再点"追加导入"或"替换整个词库"</div>' +
+        '<input type="file" id="import-file" accept=".txt,.csv">' +
+      '</div>' +
+      '<div class="field">' +
+        '<label>或者直接粘贴词表（每行一个单词）</label>' +
+        '<div class="hint">支持格式：单词,释义,例句(可选) &nbsp;|&nbsp; 单词&#9;释义 &nbsp;|&nbsp; 单词 - 释义<br>例如：abandon,v. 放弃,She refused to abandon her dream.</div>' +
+        '<textarea id="import-text" placeholder="abandon,v. 放弃;抛弃,She refused to abandon her dream.">' + escapeHtml(ui.importDraftText||'') + '</textarea>' +
+      '</div>' +
+      '<div class="btn-row" style="justify-content:flex-start;">' +
+        '<button class="btn btn-primary" data-act="import-append">追加导入</button>' +
+        '<button class="btn btn-ghost" data-act="import-replace">替换整个词库</button>' +
+      '</div>' +
+      msg +
+      '<div class="hint" style="margin-top:16px;">当前词库共 ' + state.words.length + ' 个词</div>' +
+    '</div>';
+  }
+
+  function renderSettingsTab(){
+    var s = state.settings;
+    return '<div class="paper">' +
+      '<div class="field">' +
+        '<label>每日新词目标</label>' +
+        '<div class="hint">每天最多学这么多个"没背过的新词"，学完之后会优先安排复习到期的词。参照艾宾浩斯记忆曲线，学过的词会在 1、2、4、7、15、30 天后依次安排复习，答对才会进入下一个更长的间隔，答错就退回第一天重新开始</div>' +
+        '<input type="number" class="num-input" id="daily-goal-input" min="1" max="200" value="' + s.dailyNewGoal + '">' +
+      '</div>' +
+      '<div class="field">' +
+        '<label>触发抄写任务的门槛</label>' +
+        '<div class="hint">这个单词累计答错达到多少次，就要抄写 3 遍</div>' +
+        '<input type="number" class="num-input" id="threshold-input" min="1" max="5" value="' + s.threshold + '">' +
+      '</div>' +
+      '<div class="field">' +
+        '<label>测试模式</label>' +
+        '<div class="checkline"><input type="checkbox" id="mode-en2zh" ' + (s.modeEn2Zh?'checked':'') + '> 英译中</div>' +
+        '<div class="checkline"><input type="checkbox" id="mode-zh2en" ' + (s.modeZh2En?'checked':'') + '> 中译英</div>' +
+      '</div>' +
+      '<div class="btn-row" style="justify-content:flex-start;">' +
+        '<button class="btn btn-primary" data-act="save-settings">保存设置</button>' +
+        '<button class="btn btn-ghost" data-act="reset-all">重置全部进度</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderStorageWarning(){
+    return '<div class="warn-banner">⚠️ 当前浏览器不允许本地存储（可能处于无痕模式，或存储被禁用），你的学习记录和词库<b>不会保存</b>。请换成普通浏览模式打开，或检查浏览器隐私设置。</div>';
+  }
+
+  function render(){
+    var app = document.getElementById('app');
+    var c = counts();
+    var body = '';
+    if(ui.activeTab === 'study') body = renderStudyTab();
+    else if(ui.activeTab === 'wrongbook') body = renderWrongBookTab();
+    else if(ui.activeTab === 'import') body = renderImportTab();
+    else body = renderSettingsTab();
+
+    app.innerHTML = (ui.storageAvailable ? '' : renderStorageWarning()) + renderHeader(c) + renderTabs() + body;
+    bindEvents();
+
+    // focus inputs for a smoother typing flow
+    var spellInput = document.getElementById('spell-input');
+    if(spellInput) spellInput.focus();
+    var copyInput = document.getElementById('copy-input');
+    if(copyInput){ copyInput.value = ui.copyTask.input || ''; copyInput.focus(); copyInput.setSelectionRange(copyInput.value.length, copyInput.value.length); }
+  }
+
+  function bindEvents(){
+    var app = document.getElementById('app');
+
+    app.querySelectorAll('.tab-btn').forEach(function(btn){
+      btn.onclick = function(){
+        ui.activeTab = btn.getAttribute('data-tab');
+        ui.currentWord = null; ui.feedback = null; ui.revealAnswer = false; ui.copyTask = null; ui.importMsg = null; ui.bonusMode = false;
+        render();
+      };
+    });
+
+    var bonusStart = app.querySelector('[data-act="bonus-start"]');
+    if(bonusStart) bonusStart.onclick = function(){ ui.bonusMode = true; nextCard(); render(); };
+
+    var revealBtn = app.querySelector('[data-act="reveal"]');
+    if(revealBtn) revealBtn.onclick = function(){ ui.revealAnswer = true; render(); };
+
+    var selfCorrect = app.querySelector('[data-act="self-correct"]');
+    if(selfCorrect) selfCorrect.onclick = function(){ grade(ui.currentWord, true); };
+    var selfWrong = app.querySelector('[data-act="self-wrong"]');
+    if(selfWrong) selfWrong.onclick = function(){ grade(ui.currentWord, false); };
+
+    var submitSpell = app.querySelector('[data-act="submit-spell"]');
+    var spellInput = document.getElementById('spell-input');
+    function doSubmitSpell(){
+      if(!spellInput) return;
+      var val = spellInput.value.trim().toLowerCase();
+      if(!val) return;
+      grade(ui.currentWord, val === ui.currentWord.en.toLowerCase());
+    }
+    if(submitSpell) submitSpell.onclick = doSubmitSpell;
+    if(spellInput) spellInput.addEventListener('keydown', function(e){ if(e.key==='Enter') doSubmitSpell(); });
+
+    var copyInput = document.getElementById('copy-input');
+    if(copyInput){
+      copyInput.addEventListener('input', function(){
+        ui.copyTask.input = copyInput.value;
+        var cells = app.querySelectorAll('.grid-row[data-rep="' + ui.copyTask.activeRep + '"] .cell');
+        // lightweight live update without full re-render for smoother typing
+        var letters = ui.copyTask.input.split('');
+        cells.forEach(function(cell, i){
+          if(letters[i]){ cell.textContent = letters[i]; cell.classList.remove('pending'); }
+          else { cell.textContent=''; cell.classList.add('pending'); }
+        });
+      });
+      copyInput.addEventListener('keydown', function(e){
+        if(e.key === 'Enter'){
+          submitCopyRep(copyInput.value);
+          copyInput.value='';
+          if(ui.copyTask) ui.copyTask.input='';
+        }
+      });
+    }
+
+    app.querySelectorAll('[data-act="practice"]').forEach(function(btn){
+      btn.onclick = function(){
+        var id = btn.getAttribute('data-id');
+        var w = state.words.find(function(x){ return x.id === id; });
+        if(w){ ui.activeTab='study'; startCopyTask(w); }
+      };
+    });
+
+    var importFile = document.getElementById('import-file');
+    if(importFile) importFile.addEventListener('change', function(e){
+      var file = e.target.files[0];
+      if(!file) return;
+      var reader = new FileReader();
+      reader.onload = function(ev){
+        ui.importDraftText = ev.target.result;
+        ui.importMsg = { type:'ok', text:'已读取文件"' + file.name + '"，请确认内容后点击下方按钮导入。' };
+        render();
+      };
+      reader.onerror = function(){
+        ui.importMsg = { type:'warn', text:'文件读取失败，请重试，或直接把内容粘贴到文本框里。' };
+        render();
+      };
+      reader.readAsText(file, 'UTF-8');
+    });
+    var importTextArea = document.getElementById('import-text');
+    if(importTextArea) importTextArea.addEventListener('input', function(){ ui.importDraftText = importTextArea.value; });
+
+    var importAppend = app.querySelector('[data-act="import-append"]');
+    if(importAppend) importAppend.onclick = function(){ doImport(false); };
+    var importReplace = app.querySelector('[data-act="import-replace"]');
+    if(importReplace) importReplace.onclick = function(){ doImport(true); };
+
+    var saveSettings = app.querySelector('[data-act="save-settings"]');
+    if(saveSettings) saveSettings.onclick = async function(){
+      var t = parseInt(document.getElementById('threshold-input').value, 10);
+      state.settings.threshold = (t>=1 && t<=5) ? t : 2;
+      var g = parseInt(document.getElementById('daily-goal-input').value, 10);
+      state.settings.dailyNewGoal = (g>=1 && g<=200) ? g : 30;
+      state.settings.modeEn2Zh = document.getElementById('mode-en2zh').checked;
+      state.settings.modeZh2En = document.getElementById('mode-zh2en').checked;
+      await persist();
+      render();
+    };
+    var resetAll = app.querySelector('[data-act="reset-all"]');
+    if(resetAll) resetAll.onclick = async function(){
+      if(!confirm('确定要清空所有学习进度和词库，恢复成示例词表吗？此操作不可撤销。')) return;
+      state = defaultState();
+      updateStreak();
+      await persist();
+      ui.activeTab='study'; ui.currentWord=null; ui.currentMode=null; ui.revealAnswer=false;
+      ui.feedback=null; ui.copyTask=null; ui.importMsg=null; ui.importDraftText=''; ui.bonusMode=false;
+      render();
+    };
+  }
+
+  function parseLine(line){
+    var parts = null;
+    if(line.indexOf('\t') !== -1) parts = line.split('\t');
+    else if(line.indexOf(',') !== -1) parts = line.split(',');
+    else if(line.indexOf(' - ') !== -1) parts = line.split(' - ');
+    else if(line.indexOf('：') !== -1) parts = line.split('：');
+    else if(line.indexOf(':') !== -1) parts = line.split(':');
+    if(!parts || parts.length < 2) return null;
+    var en = parts[0].trim();
+    var zh = parts[1].trim();
+    var example = parts.length > 2 ? parts.slice(2).join(',').trim() : '';
+    if(!en || !zh) return null;
+    return makeWord(en, zh, example);
+  }
+
+  async function doImport(replace){
+    var text = document.getElementById('import-text').value;
+    var lines = text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length;});
+    var added = 0, skipped = 0, parsedWords = [];
+    lines.forEach(function(line){
+      var w = parseLine(line);
+      if(w) parsedWords.push(w); else skipped++;
+    });
+    if(parsedWords.length === 0){
+      ui.importMsg = { type:'warn', text:'没有识别到有效的词条，请检查格式后重试。' };
+      render();
+      return;
+    }
+    if(replace){
+      if(!confirm('确定要替换整个词库吗？现有的学习进度会一并清空。')) return;
+      state.words = parsedWords;
+      added = parsedWords.length;
+    } else {
+      var existingIds = {};
+      state.words.forEach(function(w){ existingIds[w.id] = true; });
+      parsedWords.forEach(function(w){
+        if(!existingIds[w.id]){ state.words.push(w); existingIds[w.id]=true; added++; }
+        else skipped++;
+      });
+    }
+    await persist();
+    ui.importDraftText = '';
+    ui.importMsg = { type:'ok', text:'成功导入 ' + added + ' 个新词' + (skipped? '，跳过 ' + skipped + ' 行（重复或格式不对）':'') + '。' };
+    render();
+  }
+
+  async function init(){
+    ui.storageAvailable = storageOK;
+    await loadState();
+    updateStreak();
+    await persist();
+    render();
+  }
+
+  init();
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('service-worker.js').catch(function(err){
+        console.warn('Service worker registration failed:', err);
+      });
+    });
+  }
+})();
+</script>
+</body>
+</html>

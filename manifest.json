@@ -1,0 +1,16 @@
+{
+  "name": "四级词库·错词抄写本",
+  "short_name": "错词抄写本",
+  "description": "背单词 + 错词自动抄写 + 艾宾浩斯复习曲线，离线也能用",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F2E6",
+  "theme_color": "#F5F2E6",
+  "orientation": "portrait-primary",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
