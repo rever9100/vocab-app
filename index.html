@@ -254,7 +254,7 @@
       loadedBooks: {},              // bookId -> true once its words are inserted into state.words
       activeBook: firstBook,        // which book the study tab is currently working through
       customBookName: '我的词库',
-      settings: { threshold: 2, modeEn2Zh: true, modeZh2En: true, dailyNewGoal: 30 },
+      settings: { threshold: 2, modeEn2Zh: true, modeZh2En: true, dailyNewGoal: 30, copyMode: 'type' },
       streakDays: 0,
       lastActiveDate: null,
       dailyProgress: { date: null, newIntroducedCount: 0, reviewsDoneToday: 0 }
@@ -359,6 +359,7 @@
     if(state.settings.modeEn2Zh == null) state.settings.modeEn2Zh = true;
     if(state.settings.modeZh2En == null) state.settings.modeZh2En = true;
     if(state.settings.dailyNewGoal == null) state.settings.dailyNewGoal = 30;
+    if(state.settings.copyMode == null) state.settings.copyMode = 'type';
     if(!state.loadedBooks) state.loadedBooks = {};
     if(!state.customBookName) state.customBookName = '我的词库';
     if(!Array.isArray(state.words)) state.words = [];
@@ -502,7 +503,7 @@
     }
     await persist();
     render();
-    if(!correct && word.wrongCount >= state.settings.threshold){
+    if(!correct && state.settings.copyMode !== 'off' && word.wrongCount >= state.settings.threshold){
       setTimeout(function(){ startCopyTask(word); }, 700);
     } else {
       setTimeout(function(){ nextCard(); render(); }, correct ? 500 : 1800);
@@ -540,6 +541,18 @@
     } else {
       ct.error = true;
     }
+    render();
+  }
+
+  // Handwrite mode: user copies on paper, taps a button to mark each rep done (no spell check).
+  function markHandwriteRep(){
+    var ct = ui.copyTask;
+    ct.repsDone[ct.activeRep] = true;
+    if(ct.repsDone.every(function(x){return x;})){
+      finishCopyTask();
+      return;
+    }
+    ct.activeRep++;
     render();
   }
 
@@ -676,6 +689,7 @@
   function renderCopyTask(){
     var ct = ui.copyTask;
     var word = ct.word;
+    var handwrite = (state.settings.copyMode === 'handwrite');
     var letters = word.en.split('');
     var rows = '';
     for(var r=0;r<3;r++){
@@ -683,7 +697,7 @@
       var cells = '';
       if(ct.repsDone[r]){
         letters.forEach(function(ch){ cells += '<div class="cell done">' + escapeHtml(ch) + '</div>'; });
-      } else if(r === ct.activeRep){
+      } else if(!handwrite && r === ct.activeRep){
         var typed = (ct.input||'');
         letters.forEach(function(ch, i){
           var shown = typed[i] ? escapeHtml(typed[i]) : '';
@@ -695,6 +709,19 @@
       rows += '<div class="grid-row" data-rep="' + r + '"><div class="rep-label">' + (r+1) + '</div>' + cells + mark + '</div>';
     }
     var errMsg = ct.error ? '<div class="msg warn">拼错啦，再试一次这一遍～</div>' : '';
+
+    if(handwrite){
+      var doneReps = ct.repsDone.filter(function(x){return x;}).length;
+      return '<div class="paper">' +
+        '<div class="copy-title">这个词错太多次了，请在纸上工整抄写 3 遍：<span style="font-family:var(--font-mono)">' + escapeHtml(word.en) + '</span></div>' +
+        '<div class="copy-sub">' + escapeHtml(word.zh) + ' · 在纸上写完一遍，就点一下下面的按钮</div>' +
+        rows +
+        '<div class="btn-row" style="margin-top:16px;">' +
+          '<button class="btn btn-green" data-act="handwrite-done">我抄完第 ' + (doneReps+1) + ' 遍了</button>' +
+        '</div>' +
+      '</div>';
+    }
+
     return '<div class="paper">' +
       '<div class="copy-title">这个词错太多次了，工整抄写 3 遍：<span style="font-family:var(--font-mono)">' + escapeHtml(word.en) + '</span></div>' +
       '<div class="copy-sub">' + escapeHtml(word.zh) + ' · 抄对才算一遍，抄错不计数</div>' +
@@ -760,6 +787,13 @@
         '<label>测试模式</label>' +
         '<div class="checkline"><input type="checkbox" id="mode-en2zh" ' + (s.modeEn2Zh?'checked':'') + '> 英译中</div>' +
         '<div class="checkline"><input type="checkbox" id="mode-zh2en" ' + (s.modeZh2En?'checked':'') + '> 中译英</div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<label>抄写方式</label>' +
+        '<div class="hint">一个词错太多次时，用哪种方式罚抄巩固</div>' +
+        '<div class="checkline"><input type="radio" name="copymode" id="copymode-type" value="type" ' + (s.copyMode==='type'?'checked':'') + '> 打字抄写（在格子里打对单词才算一遍）</div>' +
+        '<div class="checkline"><input type="radio" name="copymode" id="copymode-handwrite" value="handwrite" ' + (s.copyMode==='handwrite'?'checked':'') + '> 手写抄写（在纸上抄，抄完点按钮确认）</div>' +
+        '<div class="checkline"><input type="radio" name="copymode" id="copymode-off" value="off" ' + (s.copyMode==='off'?'checked':'') + '> 不抄写（答错就跳过，不罚抄）</div>' +
       '</div>' +
       '<div class="btn-row" style="justify-content:flex-start;">' +
         '<button class="btn btn-primary" data-act="save-settings">保存设置</button>' +
@@ -853,6 +887,10 @@
         });
       });
       copyInput.addEventListener('keydown', function(e){
+        // When a Chinese/pinyin IME is active, the first Enter only confirms the IME's
+        // candidate and fires with isComposing=true (or keyCode 229). Ignoring those means
+        // one Enter = one submission, so "抄写3遍" really needs 3 presses, not 6.
+        if(e.isComposing || e.keyCode === 229) return;
         if(e.key === 'Enter'){
           submitCopyRep(copyInput.value);
           copyInput.value='';
@@ -860,6 +898,9 @@
         }
       });
     }
+
+    var handwriteDone = app.querySelector('[data-act="handwrite-done"]');
+    if(handwriteDone) handwriteDone.onclick = function(){ markHandwriteRep(); };
 
     app.querySelectorAll('[data-act="practice"]').forEach(function(btn){
       btn.onclick = function(){
@@ -901,6 +942,10 @@
       state.settings.dailyNewGoal = (g>=1 && g<=200) ? g : 30;
       state.settings.modeEn2Zh = document.getElementById('mode-en2zh').checked;
       state.settings.modeZh2En = document.getElementById('mode-zh2en').checked;
+      var cm = 'type';
+      if(document.getElementById('copymode-handwrite').checked) cm = 'handwrite';
+      else if(document.getElementById('copymode-off').checked) cm = 'off';
+      state.settings.copyMode = cm;
       await persist();
       render();
     };
