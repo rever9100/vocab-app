@@ -494,14 +494,18 @@
       word.reviewStage = 0;
       word.nextReviewDate = addDays(today, REVIEW_INTERVALS[0]);
       word.wrongCount = (word.wrongCount||0) + 1;
-      ui.feedback = { type:'wrong', text:'✗ 答错了 · 正确答案：' + word.en };
+      // Show whichever side the user was being asked to produce.
+      var answer = (ui.currentMode === 'en2zh')
+        ? (word.en + ' → ' + word.zh)
+        : (word.zh + ' → ' + word.en);
+      ui.feedback = { type:'wrong', text:'✗ 答错了 · ' + answer };
     }
     await persist();
     render();
     if(!correct && word.wrongCount >= state.settings.threshold){
       setTimeout(function(){ startCopyTask(word); }, 700);
     } else {
-      setTimeout(function(){ nextCard(); render(); }, correct ? 500 : 1300);
+      setTimeout(function(){ nextCard(); render(); }, correct ? 500 : 1800);
     }
   }
 
@@ -637,7 +641,10 @@
       body += '<div class="fc-mode">英译中</div>';
       body += '<div class="fc-word">' + escapeHtml(w.en) + '</div>';
       if(!ui.revealAnswer){
-        body += '<div class="btn-row"><button class="btn btn-primary" data-act="reveal">显示释义</button></div>';
+        body += '<div class="btn-row">' +
+          '<button class="btn btn-primary" data-act="reveal">显示释义</button>' +
+          '<button class="btn btn-ghost" data-act="dont-know">不知道</button>' +
+        '</div>';
       } else {
         body += '<div class="fc-reveal">' + escapeHtml(w.zh) + '</div>';
         body += '<div class="fc-example">' + escapeHtml(w.example) + '</div>';
@@ -654,7 +661,10 @@
       body += '<div class="fc-example">' + escapeHtml(w.example) + '</div>';
       if(!ui.feedback){
         body += '<div class="btn-row"><input type="text" id="spell-input" placeholder="拼写英文单词" autocomplete="off"></div>';
-        body += '<div class="btn-row"><button class="btn btn-primary" data-act="submit-spell">提交</button></div>';
+        body += '<div class="btn-row">' +
+          '<button class="btn btn-primary" data-act="submit-spell">提交</button>' +
+          '<button class="btn btn-ghost" data-act="dont-know">不知道</button>' +
+        '</div>';
       }
     }
     if(ui.feedback){
@@ -810,6 +820,9 @@
 
     var revealBtn = app.querySelector('[data-act="reveal"]');
     if(revealBtn) revealBtn.onclick = function(){ ui.revealAnswer = true; render(); };
+
+    var dontKnow = app.querySelector('[data-act="dont-know"]');
+    if(dontKnow) dontKnow.onclick = function(){ grade(ui.currentWord, false); };
 
     var selfCorrect = app.querySelector('[data-act="self-correct"]');
     if(selfCorrect) selfCorrect.onclick = function(){ grade(ui.currentWord, true); };
