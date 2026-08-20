@@ -193,39 +193,40 @@
   .done-screen{text-align:center;padding:50px 10px;}
   .done-screen .big{font-size:36px;margin-bottom:10px;}
   .done-screen .msg-line{font-size:14px;color:var(--ink-soft);margin-bottom:18px;}
+  .book-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:12px 10px;border-bottom:1px dashed rgba(38,49,74,0.15);}
+  .book-row:last-child{border-bottom:none;}
+  .book-row.active{background:var(--green-bg);border-radius:8px;border-bottom:1px dashed transparent;}
+  .book-name{font-family:var(--font-display);font-size:16px;font-weight:700;}
+  .book-stat{font-size:12px;color:var(--ink-soft);margin-top:3px;}
+  .book-badge{font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(38,49,74,0.1);
+    color:var(--ink-soft);vertical-align:middle;margin-left:4px;font-family:var(--font-body);font-weight:600;}
+  .book-badge.custom{background:rgba(166,116,46,0.15);color:var(--stamp-gold);}
+  .book-current{font-size:12px;color:var(--green);font-weight:700;white-space:nowrap;}
+  .book-select{white-space:nowrap;}
 </style>
 </head>
 <body>
 <div class="wrap" id="app"><div class="loading">正在打开错词本…</div></div>
 
+<script src="wordbooks-data.js"></script>
 <script>
 (function(){
   var STORAGE_KEY = 'vocab-app-state-v1';
 
-  var DEMO_WORDS = [
-    ['abandon','v. 放弃；抛弃','She refused to abandon her dream.'],
-    ['abundant','adj. 丰富的；充裕的','The region has abundant natural resources.'],
-    ['accompany','v. 陪伴；伴随','He asked her to accompany him to the party.'],
-    ['accumulate','v. 积累；积聚','Dust had accumulated on the shelf.'],
-    ['accurate','adj. 准确的','The weather forecast turned out to be accurate.'],
-    ['accuse','v. 指责；控告','They accused him of lying.'],
-    ['achieve','v. 实现；达到','She worked hard to achieve her goals.'],
-    ['acknowledge','v. 承认；致谢','He acknowledged his mistake.'],
-    ['acquire','v. 获得；学到','Children acquire language very quickly.'],
-    ['adapt','v. 适应；改编','Animals adapt to their environment over time.'],
-    ['adequate','adj. 足够的；适当的','The salary is barely adequate.'],
-    ['adjust','v. 调整；适应','It took time to adjust to the new schedule.'],
-    ['altitude','n. 海拔；高度','The plane reached its cruising altitude.'],
-    ['amateur','n./adj. 业余爱好者；业余的','He is a talented amateur photographer.'],
-    ['ambiguous','adj. 模糊的；模棱两可的','The instructions in the manual were ambiguous.'],
-    ['analyze','v. 分析','Scientists analyzed the data carefully.'],
-    ['annual','adj. 每年的；年度的','The company holds an annual meeting in March.'],
-    ['anticipate','v. 预料；期待','We anticipate strong demand this year.'],
-    ['apparent','adj. 明显的','It became apparent that he was lying.'],
-    ['appreciate','v. 欣赏；感激','I really appreciate your help today.']
-  ];
-
   var REVIEW_INTERVALS = [1, 2, 4, 7, 15, 30]; // days — simplified Ebbinghaus-style schedule
+  var CUSTOM_BOOK_ID = 'custom';
+
+  // Built-in wordbooks come from wordbooks-data.js (window.BUILTIN_WORDBOOKS).
+  // We build a list of book metadata plus a lookup for their word arrays.
+  function builtinBooks(){
+    var src = window.BUILTIN_WORDBOOKS || {};
+    var list = [];
+    Object.keys(src).forEach(function(k){
+      list.push({ id: src[k].id, name: src[k].name, builtin: true, words: src[k].words });
+    });
+    return list;
+  }
 
   function todayStr(){ return new Date().toISOString().slice(0,10); }
   function addDays(dateStr, n){
@@ -233,9 +234,12 @@
     d.setDate(d.getDate() + n);
     return d.toISOString().slice(0,10);
   }
-  function makeWord(en, zh, example){
+  // A word belongs to a book (book = book id). id is unique per book: book + ':' + en.
+  function makeWord(book, en, zh, example){
     return {
-      id: en.toLowerCase(), en: en, zh: zh, example: example||'',
+      id: book + ':' + en.toLowerCase(),
+      book: book,
+      en: en, zh: zh, example: example||'',
       wrongCount: 0,
       introducedDate: null,   // null = never studied yet
       reviewStage: 0,         // index into REVIEW_INTERVALS, how many successful reviews passed
@@ -243,13 +247,48 @@
     };
   }
   function defaultState(){
-    return {
-      words: DEMO_WORDS.map(function(w){ return makeWord(w[0], w[1], w[2]); }),
+    var books = builtinBooks();
+    var firstBook = books.length ? books[0].id : CUSTOM_BOOK_ID;
+    var st = {
+      words: [],                    // all words the user has actually loaded, across books
+      loadedBooks: {},              // bookId -> true once its words are inserted into state.words
+      activeBook: firstBook,        // which book the study tab is currently working through
+      customBookName: '我的词库',
       settings: { threshold: 2, modeEn2Zh: true, modeZh2En: true, dailyNewGoal: 30 },
       streakDays: 0,
       lastActiveDate: null,
       dailyProgress: { date: null, newIntroducedCount: 0, reviewsDoneToday: 0 }
     };
+    return st;
+  }
+
+  // Ensure a built-in book's words are present in state.words (lazy, only when first needed).
+  function ensureBookLoaded(bookId){
+    if(state.loadedBooks[bookId]) return;
+    var book = builtinBooks().filter(function(b){ return b.id === bookId; })[0];
+    if(!book){ state.loadedBooks[bookId] = true; return; }
+    var existing = {};
+    state.words.forEach(function(w){ if(w.book === bookId) existing[w.id] = true; });
+    book.words.forEach(function(pair){
+      var w = makeWord(bookId, pair[0], pair[1], pair[2] || '');
+      if(!existing[w.id]){ state.words.push(w); existing[w.id] = true; }
+    });
+    state.loadedBooks[bookId] = true;
+  }
+
+  // All books available to pick from: built-ins + a custom book if the user imported anything.
+  function allBooks(){
+    var list = builtinBooks().map(function(b){ return { id: b.id, name: b.name, builtin: true }; });
+    var hasCustom = state.words.some(function(w){ return w.book === CUSTOM_BOOK_ID; });
+    if(hasCustom || state.activeBook === CUSTOM_BOOK_ID){
+      list.push({ id: CUSTOM_BOOK_ID, name: state.customBookName || '我的词库', builtin: false });
+    }
+    return list;
+  }
+
+  // Words belonging to the currently active book.
+  function activeWords(){
+    return state.words.filter(function(w){ return w.book === state.activeBook; });
   }
 
   var state = null;       // persisted data
@@ -320,14 +359,30 @@
     if(state.settings.modeEn2Zh == null) state.settings.modeEn2Zh = true;
     if(state.settings.modeZh2En == null) state.settings.modeZh2En = true;
     if(state.settings.dailyNewGoal == null) state.settings.dailyNewGoal = 30;
+    if(!state.loadedBooks) state.loadedBooks = {};
+    if(!state.customBookName) state.customBookName = '我的词库';
+    if(!Array.isArray(state.words)) state.words = [];
     state.words.forEach(function(w){
+      // Words saved before wordbooks existed have no `book`; treat them as custom imports.
+      if(w.book === undefined){ w.book = CUSTOM_BOOK_ID; }
+      if(w.id === undefined || w.id.indexOf(':') === -1){ w.id = w.book + ':' + (w.en||'').toLowerCase(); }
       if(w.introducedDate === undefined) w.introducedDate = (w.correctStreak ? todayStr() : null);
       if(w.reviewStage === undefined) w.reviewStage = 0;
       if(w.nextReviewDate === undefined) w.nextReviewDate = w.introducedDate ? todayStr() : null;
       if(w.wrongCount == null) w.wrongCount = 0;
       delete w.correctStreak;
     });
+    // Mark custom as loaded if any custom words exist; built-in books stay lazy.
+    if(state.words.some(function(w){ return w.book === CUSTOM_BOOK_ID; })){
+      state.loadedBooks[CUSTOM_BOOK_ID] = true;
+    }
+    // If the active book points at a built-in, make sure its words are present.
+    if(!state.activeBook){
+      var books = builtinBooks();
+      state.activeBook = books.length ? books[0].id : CUSTOM_BOOK_ID;
+    }
     if(!state.dailyProgress) state.dailyProgress = { date:null, newIntroducedCount:0, reviewsDoneToday:0 };
+    ensureBookLoaded(state.activeBook);
   }
 
   function ensureDailyProgress(){
@@ -366,29 +421,32 @@
   }
   function counts(){
     var c = { new:0, learning:0, mastered:0, wrongbook:0 };
-    state.words.forEach(function(w){
+    activeWords().forEach(function(w){
       c[wordStatus(w)]++;
       if(w.wrongCount > 0) c.wrongbook++;
     });
     return c;
   }
 
-  // pool=='today': due reviews + today's fresh new-word quota (normal study flow)
-  // pool=='bonus': any already-introduced word, ignoring due dates (extra optional practice)
+  // Daily new-word quota is shared across the whole app (not per-book), so studying two
+  // books in one day still respects a single "30 new words a day" budget.
+  // pool=='today': due reviews + today's fresh new-word quota, within the active book
+  // pool=='bonus': any already-introduced word in the active book, ignoring due dates
   function pickWord(poolMode){
     ensureDailyProgress();
     var today = todayStr();
+    var pool0 = activeWords();
     if(poolMode === 'bonus'){
-      var bonusPool = state.words.filter(function(w){ return w.introducedDate; });
+      var bonusPool = pool0.filter(function(w){ return w.introducedDate; });
       if(bonusPool.length === 0) return null;
       return bonusPool[Math.floor(Math.random()*bonusPool.length)];
     }
-    var dueWords = state.words.filter(function(w){
+    var dueWords = pool0.filter(function(w){
       return w.introducedDate && w.nextReviewDate && w.nextReviewDate <= today;
     });
     var remainingQuota = Math.max(0, (state.settings.dailyNewGoal||0) - state.dailyProgress.newIntroducedCount);
     var newWords = remainingQuota > 0
-      ? state.words.filter(function(w){ return !w.introducedDate; }).slice(0, remainingQuota)
+      ? pool0.filter(function(w){ return !w.introducedDate; }).slice(0, remainingQuota)
       : [];
     var pool = dueWords.concat(newWords);
     if(pool.length === 0) return null;
@@ -488,7 +546,7 @@
   function todayStats(){
     ensureDailyProgress();
     var today = todayStr();
-    var dueRemaining = state.words.filter(function(w){
+    var dueRemaining = activeWords().filter(function(w){
       return w.introducedDate && w.nextReviewDate && w.nextReviewDate <= today;
     }).length;
     return {
@@ -498,12 +556,17 @@
     };
   }
 
+  function activeBookName(){
+    var b = allBooks().filter(function(x){ return x.id === state.activeBook; })[0];
+    return b ? b.name : '词库';
+  }
+
   function renderHeader(c){
     var t = todayStats();
     var pct = t.newGoal > 0 ? Math.min(100, Math.round(t.newDone / t.newGoal * 100)) : 0;
     return '' +
     '<div class="cover">' +
-      '<div><h1>四级词库 · 错词抄写本</h1><div class="sub">背单词 · 错了就罚抄</div></div>' +
+      '<div><h1>' + escapeHtml(activeBookName()) + ' · 错词抄写本</h1><div class="sub">背单词 · 错了就罚抄</div></div>' +
       '<div class="stamp"><div class="num">' + (state.streakDays||0) + '</div><div class="lbl">连续天数</div></div>' +
     '</div>' +
     '<div class="daily-bar">' +
@@ -519,16 +582,42 @@
   }
 
   function renderTabs(){
-    var tabs = [['study','背单词'],['wrongbook','错词本'],['import','导入词库'],['settings','设置']];
+    var tabs = [['study','背单词'],['books','词书'],['wrongbook','错词本'],['import','导入'],['settings','设置']];
     return '<div class="tabs">' + tabs.map(function(t){
       return '<button class="tab-btn' + (ui.activeTab===t[0]?' active':'') + '" data-tab="' + t[0] + '">' + t[1] + '</button>';
     }).join('') + '</div>';
   }
 
+  function renderBooksTab(){
+    var books = allBooks();
+    var rows = books.map(function(b){
+      ensureBookLoaded(b.id);
+      var bookWords = state.words.filter(function(w){ return w.book === b.id; });
+      var total = bookWords.length;
+      var learned = bookWords.filter(function(w){ return w.introducedDate; }).length;
+      var mastered = bookWords.filter(function(w){ return wordStatus(w) === 'mastered'; }).length;
+      var isActive = (b.id === state.activeBook);
+      var badge = b.builtin ? '<span class="book-badge">内置</span>' : '<span class="book-badge custom">自建</span>';
+      var actives = isActive ? '<span class="book-current">当前学习</span>' : '<button class="mini-btn book-select" data-book="' + escapeHtml(b.id) + '">选它来背</button>';
+      return '<div class="book-row' + (isActive ? ' active' : '') + '">' +
+          '<div class="book-main">' +
+            '<div class="book-name">' + escapeHtml(b.name) + ' ' + badge + '</div>' +
+            '<div class="book-stat">共 ' + total + ' 词 · 学过 ' + learned + ' · 已掌握 ' + mastered + '</div>' +
+          '</div>' +
+          '<div class="book-action">' + actives + '</div>' +
+        '</div>';
+    }).join('');
+    return '<div class="paper">' +
+      '<div class="copy-title" style="margin-bottom:12px;">选择要背的词书</div>' +
+      '<div class="hint" style="margin-bottom:14px;">切换词书后，"背单词"页会只考当前这本里的词。每本词书的学习进度各自独立保存，随时切换互不影响。想加考研、雅思等其它词表，去"导入"页添加。</div>' +
+      rows +
+    '</div>';
+  }
+
   function renderStudyTab(){
     if(ui.copyTask) return renderCopyTask();
-    if(state.words.length === 0){
-      return '<div class="paper"><div class="empty">词库是空的，先去"导入词库"添加单词吧。</div></div>';
+    if(activeWords().length === 0){
+      return '<div class="paper"><div class="empty">这本词书还没有单词。去"词书"页换一本，或到"导入"页添加自己的词表。</div></div>';
     }
     if(!ui.currentWord) nextCard();
     var w = ui.currentWord;
@@ -606,10 +695,10 @@
   }
 
   function renderWrongBookTab(){
-    var list = state.words.filter(function(w){ return w.wrongCount>0; })
+    var list = activeWords().filter(function(w){ return w.wrongCount>0; })
       .sort(function(a,b){ return b.wrongCount - a.wrongCount; });
     if(list.length === 0){
-      return '<div class="paper"><div class="empty">错词本是空的，继续保持～</div></div>';
+      return '<div class="paper"><div class="empty">这本词书的错词本是空的，继续保持～</div></div>';
     }
     var rows = list.map(function(w){
       return '<div class="word-row">' +
@@ -637,10 +726,10 @@
       '</div>' +
       '<div class="btn-row" style="justify-content:flex-start;">' +
         '<button class="btn btn-primary" data-act="import-append">追加导入</button>' +
-        '<button class="btn btn-ghost" data-act="import-replace">替换整个词库</button>' +
+        '<button class="btn btn-ghost" data-act="import-replace">替换自建词库</button>' +
       '</div>' +
       msg +
-      '<div class="hint" style="margin-top:16px;">当前词库共 ' + state.words.length + ' 个词</div>' +
+      '<div class="hint" style="margin-top:16px;">导入的词会进入"' + escapeHtml(state.customBookName || '我的词库') + '"这本自建词书（内置的四级、六级词书不受影响）。当前自建词书共 ' + state.words.filter(function(w){return w.book===CUSTOM_BOOK_ID;}).length + ' 个词。导入后可到"词书"页选它来背。</div>' +
     '</div>';
   }
 
@@ -678,6 +767,7 @@
     var c = counts();
     var body = '';
     if(ui.activeTab === 'study') body = renderStudyTab();
+    else if(ui.activeTab === 'books') body = renderBooksTab();
     else if(ui.activeTab === 'wrongbook') body = renderWrongBookTab();
     else if(ui.activeTab === 'import') body = renderImportTab();
     else body = renderSettingsTab();
@@ -699,6 +789,18 @@
       btn.onclick = function(){
         ui.activeTab = btn.getAttribute('data-tab');
         ui.currentWord = null; ui.feedback = null; ui.revealAnswer = false; ui.copyTask = null; ui.importMsg = null; ui.bonusMode = false;
+        render();
+      };
+    });
+
+    app.querySelectorAll('.book-select').forEach(function(btn){
+      btn.onclick = async function(){
+        var bookId = btn.getAttribute('data-book');
+        ensureBookLoaded(bookId);
+        state.activeBook = bookId;
+        ui.currentWord = null; ui.feedback = null; ui.revealAnswer = false; ui.copyTask = null; ui.bonusMode = false;
+        ui.activeTab = 'study';
+        await persist();
         render();
       };
     });
@@ -791,8 +893,9 @@
     };
     var resetAll = app.querySelector('[data-act="reset-all"]');
     if(resetAll) resetAll.onclick = async function(){
-      if(!confirm('确定要清空所有学习进度和词库，恢复成示例词表吗？此操作不可撤销。')) return;
+      if(!confirm('确定要清空所有词书的学习进度（包括自建词库的内容）吗？此操作不可撤销。')) return;
       state = defaultState();
+      ensureBookLoaded(state.activeBook);
       updateStreak();
       await persist();
       ui.activeTab='study'; ui.currentWord=null; ui.currentMode=null; ui.revealAnswer=false;
@@ -813,7 +916,7 @@
     var zh = parts[1].trim();
     var example = parts.length > 2 ? parts.slice(2).join(',').trim() : '';
     if(!en || !zh) return null;
-    return makeWord(en, zh, example);
+    return makeWord(CUSTOM_BOOK_ID, en, zh, example);
   }
 
   async function doImport(replace){
@@ -830,8 +933,10 @@
       return;
     }
     if(replace){
-      if(!confirm('确定要替换整个词库吗？现有的学习进度会一并清空。')) return;
-      state.words = parsedWords;
+      if(!confirm('确定要替换"' + (state.customBookName||'我的词库') + '"里的全部内容吗？这本自建词书的学习进度会清空（内置词书不受影响）。')) return;
+      // Drop only custom-book words, keep built-in book progress intact.
+      state.words = state.words.filter(function(w){ return w.book !== CUSTOM_BOOK_ID; });
+      parsedWords.forEach(function(w){ state.words.push(w); });
       added = parsedWords.length;
     } else {
       var existingIds = {};
@@ -841,15 +946,17 @@
         else skipped++;
       });
     }
+    state.loadedBooks[CUSTOM_BOOK_ID] = true;
     await persist();
     ui.importDraftText = '';
-    ui.importMsg = { type:'ok', text:'成功导入 ' + added + ' 个新词' + (skipped? '，跳过 ' + skipped + ' 行（重复或格式不对）':'') + '。' };
+    ui.importMsg = { type:'ok', text:'成功导入 ' + added + ' 个新词到"' + escapeHtml(state.customBookName||'我的词库') + '"' + (skipped? '，跳过 ' + skipped + ' 行（重复或格式不对）':'') + '。到"词书"页选它就能开始背。' };
     render();
   }
 
   async function init(){
     ui.storageAvailable = storageOK;
     await loadState();
+    ensureBookLoaded(state.activeBook);  // make sure the active book's words are present (fresh install or after load)
     updateStreak();
     await persist();
     render();

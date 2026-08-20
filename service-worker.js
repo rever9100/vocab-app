@@ -1,9 +1,10 @@
 // Bump this when you deploy an update, so old caches get replaced.
-var CACHE_NAME = 'vocab-app-cache-v1';
+var CACHE_NAME = 'vocab-app-cache-v2';
 
 var APP_SHELL = [
   './',
   './index.html',
+  './wordbooks-data.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'

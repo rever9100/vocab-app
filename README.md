@@ -1,14 +1,18 @@
 # 四级词库·错词抄写本（离线版 / PWA）
 
-这个文件夹里的 5 个文件要放在同一个目录下一起用，不要改文件名（`manifest.json` 和 `service-worker.js` 里用的都是相对路径）：
+这个文件夹里的 6 个文件要放在同一个目录下一起用，不要改文件名（`manifest.json` 和 `service-worker.js` 里用的都是相对路径）：
 
 ```
-index.html          主程序
-manifest.json        App 的名称、图标、启动方式配置
-service-worker.js    离线缓存逻辑
+index.html           主程序
+wordbooks-data.js     内置词书数据（四级 4441 词 + 六级 2083 词）
+manifest.json         App 的名称、图标、启动方式配置
+service-worker.js     离线缓存逻辑
 icon-192.png          App 图标（小尺寸）
 icon-512.png          App 图标（大尺寸）
 ```
+
+内置了四级、六级两本词书，打开就能在"词书"页选择切换，各自的学习进度独立保存。
+有其它需求（考研、雅思等）可以在"导入"页粘贴或上传自己的词表，会存到一本叫"我的词库"的自建词书里。
 
 和之前 Claude 里那版最大的区别：数据存储从 Claude 的 `window.storage`
 换成了浏览器自带的 `localStorage`，所以脱离 Claude、脱离网络都能正常读写数据。
