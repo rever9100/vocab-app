@@ -1,5 +1,5 @@
 // Bump this when you deploy an update, so old caches get replaced.
-var CACHE_NAME = 'vocab-app-cache-v4';
+var CACHE_NAME = 'vocab-app-cache-v5';
 
 var APP_SHELL = [
   './',

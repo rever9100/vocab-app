@@ -105,7 +105,8 @@
   .fc-mode{font-size:11px;letter-spacing:2px;color:var(--ink-soft);margin-bottom:14px;text-transform:uppercase;}
   .fc-word{font-family:var(--font-display);font-size:34px;font-weight:700;margin:6px 0 18px;word-break:break-word;}
   .fc-zh{font-family:var(--font-display);font-size:24px;font-weight:700;margin:6px 0 4px;}
-  .fc-example{font-size:13px;color:var(--ink-soft);font-style:italic;margin-bottom:10px;min-height:18px;}
+  .fc-example{font-size:13px;color:var(--ink-soft);font-style:italic;margin-bottom:4px;min-height:18px;}
+  .fc-example-cn{font-size:12px;color:var(--ink-soft);margin-bottom:10px;}
   .fc-reveal{font-size:20px;font-weight:700;color:var(--ink);margin:8px 0;min-height:28px;}
 
   input[type=text]{
@@ -235,11 +236,11 @@
     return d.toISOString().slice(0,10);
   }
   // A word belongs to a book (book = book id). id is unique per book: book + ':' + en.
-  function makeWord(book, en, zh, example){
+  function makeWord(book, en, zh, example, exampleCn){
     return {
       id: book + ':' + en.toLowerCase(),
       book: book,
-      en: en, zh: zh, example: example||'',
+      en: en, zh: zh, example: example||'', exampleCn: exampleCn||'',
       wrongCount: 0,
       introducedDate: null,   // null = never studied yet
       reviewStage: 0,         // index into REVIEW_INTERVALS, how many successful reviews passed
@@ -270,7 +271,7 @@
     var existing = {};
     state.words.forEach(function(w){ if(w.book === bookId) existing[w.id] = true; });
     book.words.forEach(function(pair){
-      var w = makeWord(bookId, pair[0], pair[1], pair[2] || '');
+      var w = makeWord(bookId, pair[0], pair[1], pair[2] || '', pair[3] || '');
       if(!existing[w.id]){ state.words.push(w); existing[w.id] = true; }
     });
     state.loadedBooks[bookId] = true;
@@ -302,7 +303,8 @@
     importMsg: null,
     importDraftText: '',
     storageAvailable: true,
-    bonusMode: false
+    bonusMode: false,
+    lastWordId: null
   };
 
   // Local storage shim (offline-capable) — mimics the same async get/set interface
@@ -371,6 +373,7 @@
       if(w.reviewStage === undefined) w.reviewStage = 0;
       if(w.nextReviewDate === undefined) w.nextReviewDate = w.introducedDate ? todayStr() : null;
       if(w.wrongCount == null) w.wrongCount = 0;
+      if(w.exampleCn === undefined) w.exampleCn = '';
       delete w.correctStreak;
     });
     // Mark custom as loaded if any custom words exist; built-in books stay lazy.
@@ -440,6 +443,10 @@
     if(poolMode === 'bonus'){
       var bonusPool = pool0.filter(function(w){ return w.introducedDate; });
       if(bonusPool.length === 0) return null;
+      if(ui.lastWordId && bonusPool.length > 1){
+        var bf = bonusPool.filter(function(w){ return w.id !== ui.lastWordId; });
+        if(bf.length > 0) bonusPool = bf;
+      }
       return bonusPool[Math.floor(Math.random()*bonusPool.length)];
     }
     var dueWords = pool0.filter(function(w){
@@ -451,6 +458,13 @@
       : [];
     var pool = dueWords.concat(newWords);
     if(pool.length === 0) return null;
+    // Avoid showing the exact same word twice in a row: if there's more than one
+    // candidate, drop the previous word from this draw. (If it's the only one left,
+    // we have no choice but to repeat it.)
+    if(ui.lastWordId && pool.length > 1){
+      var filtered = pool.filter(function(w){ return w.id !== ui.lastWordId; });
+      if(filtered.length > 0) pool = filtered;
+    }
     var weighted = [];
     pool.forEach(function(w){ for(var i=0;i<(w.wrongCount+1);i++) weighted.push(w); });
     return weighted[Math.floor(Math.random()*weighted.length)];
@@ -468,6 +482,7 @@
     ui.feedback = null;
     ui.revealAnswer = false;
     var w = pickWord(ui.bonusMode ? 'bonus' : 'today');
+    if(w) ui.lastWordId = w.id;
     ui.currentWord = w;
     ui.currentMode = w ? pickMode() : null;
   }
@@ -544,16 +559,11 @@
     render();
   }
 
-  // Handwrite mode: user copies on paper, taps a button to mark each rep done (no spell check).
+  // Handwrite mode: user copies on paper, taps one button to finish the whole task.
   function markHandwriteRep(){
     var ct = ui.copyTask;
-    ct.repsDone[ct.activeRep] = true;
-    if(ct.repsDone.every(function(x){return x;})){
-      finishCopyTask();
-      return;
-    }
-    ct.activeRep++;
-    render();
+    ct.repsDone = [true, true, true];
+    finishCopyTask();
   }
 
   // ---------- rendering ----------
@@ -631,6 +641,15 @@
     '</div>';
   }
 
+  function renderExample(w){
+    if(!w.example) return '';
+    var html = '<div class="fc-example">' + escapeHtml(w.example) + '</div>';
+    if(w.exampleCn){
+      html += '<div class="fc-example-cn">' + escapeHtml(w.exampleCn) + '</div>';
+    }
+    return html;
+  }
+
   function renderStudyTab(){
     if(ui.copyTask) return renderCopyTask();
     if(activeWords().length === 0){
@@ -660,7 +679,7 @@
         '</div>';
       } else {
         body += '<div class="fc-reveal">' + escapeHtml(w.zh) + '</div>';
-        body += '<div class="fc-example">' + escapeHtml(w.example) + '</div>';
+        body += renderExample(w);
         if(!ui.feedback){
           body += '<div class="btn-row">' +
             '<button class="btn btn-green" data-act="self-correct">我答对了</button>' +
@@ -671,7 +690,11 @@
     } else {
       body += '<div class="fc-mode">中译英</div>';
       body += '<div class="fc-word">' + escapeHtml(w.zh) + '</div>';
-      body += '<div class="fc-example">' + escapeHtml(w.example) + '</div>';
+      // In 中译英, showing the example up-front could reveal the target word, so
+      // only show it once the user has answered (feedback is set).
+      if(ui.feedback){
+        body += renderExample(w);
+      }
       if(!ui.feedback){
         body += '<div class="btn-row"><input type="text" id="spell-input" placeholder="拼写英文单词" autocomplete="off"></div>';
         body += '<div class="btn-row">' +
@@ -711,13 +734,12 @@
     var errMsg = ct.error ? '<div class="msg warn">拼错啦，再试一次这一遍～</div>' : '';
 
     if(handwrite){
-      var doneReps = ct.repsDone.filter(function(x){return x;}).length;
       return '<div class="paper">' +
         '<div class="copy-title">这个词错太多次了，请在纸上工整抄写 3 遍：<span style="font-family:var(--font-mono)">' + escapeHtml(word.en) + '</span></div>' +
-        '<div class="copy-sub">' + escapeHtml(word.zh) + ' · 在纸上写完一遍，就点一下下面的按钮</div>' +
+        '<div class="copy-sub">' + escapeHtml(word.zh) + ' · 在纸上抄完 3 遍后，点下面的按钮</div>' +
         rows +
         '<div class="btn-row" style="margin-top:16px;">' +
-          '<button class="btn btn-green" data-act="handwrite-done">我抄完第 ' + (doneReps+1) + ' 遍了</button>' +
+          '<button class="btn btn-green" data-act="handwrite-done">我抄完了</button>' +
         '</div>' +
       '</div>';
     }
