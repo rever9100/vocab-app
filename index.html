@@ -108,6 +108,9 @@
   .fc-example{font-size:13px;color:var(--ink-soft);font-style:italic;margin-bottom:4px;min-height:18px;}
   .fc-example-cn{font-size:12px;color:var(--ink-soft);margin-bottom:10px;}
   .fc-reveal{font-size:20px;font-weight:700;color:var(--ink);margin:8px 0;min-height:28px;}
+  .fc-hint{font-family:var(--font-mono);font-size:18px;letter-spacing:2px;color:var(--ink-soft);margin-top:10px;}
+  .speak-btn{border:none;background:transparent;cursor:pointer;padding:2px 6px;font-size:0.6em;vertical-align:middle;line-height:1;}
+  .fc-example .speak-btn,.feedback .speak-btn{font-size:14px;}
 
   input[type=text]{
     font-family:var(--font-mono);font-size:18px;padding:10px 14px;
@@ -357,6 +360,8 @@
     importMsg: null,
     importDraftText: '',
     storageAvailable: true,
+    saveFailed: false,     // last persist() threw (e.g. storage full)
+    hintShown: false,      // 中译英 hint revealed for the current card
     bonusMode: false,
     lastWordId: null
   };
@@ -455,11 +460,14 @@
     if(!storageOK) return;
     try{
       await localStore.set(STORAGE_KEY, JSON.stringify(state));
+      ui.saveFailed = false;
     }catch(e){
       console.error('保存失败', e);
+      ui.saveFailed = true;   // shown as a banner on the next render
     }
   }
 
+  // The streak counts days the user actually answered something (called from grade()).
   function updateStreak(){
     var today = todayStr();
     if(state.lastActiveDate === today) return;
@@ -471,6 +479,12 @@
       state.streakDays = 1;
     }
     state.lastActiveDate = today;
+  }
+  // A streak that ended before yesterday is already broken, so show 0 until the next answer.
+  function displayStreak(){
+    var today = todayStr();
+    if(state.lastActiveDate === today || state.lastActiveDate === addDays(today, -1)) return state.streakDays || 0;
+    return 0;
   }
 
   function wordStatus(w){
@@ -536,6 +550,7 @@
   function nextCard(){
     ui.feedback = null;
     ui.revealAnswer = false;
+    ui.hintShown = false;
     var w = pickWord(ui.bonusMode ? 'bonus' : 'today');
     if(w) ui.lastWordId = w.id;
     ui.currentWord = w;
@@ -552,13 +567,18 @@
     } else if(!ui.bonusMode){
       state.dailyProgress.reviewsDoneToday++;
     }
+    updateStreak();
     if(correct){
-      var s = word.reviewStage || 0;
-      if(s < REVIEW_INTERVALS.length){
-        word.nextReviewDate = addDays(today, REVIEW_INTERVALS[s]);
-        word.reviewStage = s + 1;
-      } else {
-        word.nextReviewDate = addDays(today, 60); // occasional booster for already-mastered words
+      // Extra practice ("bonus") doesn't move the schedule forward, otherwise a few rounds
+      // in one evening could push a word to "mastered" and skip the spaced intervals.
+      if(!ui.bonusMode){
+        var s = word.reviewStage || 0;
+        if(s < REVIEW_INTERVALS.length){
+          word.nextReviewDate = addDays(today, REVIEW_INTERVALS[s]);
+          word.reviewStage = s + 1;
+        } else {
+          word.nextReviewDate = addDays(today, 60); // occasional booster for already-mastered words
+        }
       }
       ui.feedback = { type:'correct', text:'✓ 答对了' };
     } else {
@@ -609,8 +629,7 @@
 
   function submitCopyRep(value){
     var ct = ui.copyTask;
-    var target = ct.word.en.toLowerCase();
-    if(value.trim().toLowerCase() === target){
+    if(spellingMatches(value, ct.word.en)){
       ct.repsDone[ct.activeRep] = true;
       ct.error = false;
       if(ct.repsDone.every(function(x){return x;})){
@@ -629,6 +648,54 @@
     var ct = ui.copyTask;
     ct.repsDone = [true, true, true];
     finishCopyTask();
+  }
+
+  // ---------- spelling ----------
+  // Harmless differences don't count as wrong: case, dots (a.m / am), hyphen vs space
+  // (ice-cream / ice cream). A bracketed part is optional: onward(s) accepts onward,
+  // onwards, and onward(s) typed literally.
+  function normalizeSpelling(s){
+    return (s||'').toLowerCase().replace(/\./g, '').replace(/[-\s]+/g, ' ').trim();
+  }
+  function spellingVariants(en){
+    var m = en.match(/^(.*)\(([^)]*)\)(.*)$/);
+    if(!m) return [en];
+    return [m[1] + m[3], m[1] + m[2] + m[3], en];
+  }
+  function spellingMatches(input, en){
+    var a = normalizeSpelling(input);
+    if(!a) return false;
+    return spellingVariants(en).some(function(v){ return normalizeSpelling(v) === a; });
+  }
+  // 中译英 hint: first letter, then one underscore per letter; hyphens, spaces and dots stay.
+  function spellingHint(en){
+    var base = spellingVariants(en)[0];
+    var letters = 0;
+    var shown = base.split('').map(function(ch, i){
+      if(!/[a-z]/i.test(ch)) return ch;
+      letters++;
+      return i === 0 ? ch : '_';
+    }).join(' ');
+    return shown + '（' + letters + ' 个字母）';
+  }
+
+  // ---------- pronunciation ----------
+  var canSpeak = ('speechSynthesis' in window) && typeof SpeechSynthesisUtterance !== 'undefined';
+  function speak(text){
+    if(!canSpeak || !text) return;
+    try{
+      speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = 'en-US';
+      u.rate = 0.9;
+      var voices = speechSynthesis.getVoices().filter(function(v){ return /^en([-_]|$)/i.test(v.lang); });
+      var us = voices.filter(function(v){ return /^en[-_]us$/i.test(v.lang); });
+      if(us.length || voices.length) u.voice = (us[0] || voices[0]);
+      speechSynthesis.speak(u);
+    }catch(e){ /* no speech on this device, just stay silent */ }
+  }
+  function speakBtn(what){
+    return canSpeak ? '<button class="speak-btn" data-speak="' + what + '" title="朗读" aria-label="朗读">🔊</button>' : '';
   }
 
   // ---------- rendering ----------
@@ -659,7 +726,7 @@
     return '' +
     '<div class="cover">' +
       '<div><h1>' + escapeHtml(activeBookName()) + ' · 错词抄写本</h1><div class="sub">背单词 · 错了就罚抄</div></div>' +
-      '<div class="stamp"><div class="num">' + (state.streakDays||0) + '</div><div class="lbl">连续天数</div></div>' +
+      '<div class="stamp"><div class="num">' + displayStreak() + '</div><div class="lbl">连续天数</div></div>' +
     '</div>' +
     '<div class="daily-bar">' +
       '<div class="daily-text">今日新词 ' + t.newDone + '/' + t.newGoal + ' &nbsp;·&nbsp; 待复习 ' + t.dueRemaining + '</div>' +
@@ -708,7 +775,7 @@
 
   function renderExample(w){
     if(!w.example) return '';
-    var html = '<div class="fc-example">' + escapeHtml(w.example) + '</div>';
+    var html = '<div class="fc-example">' + escapeHtml(w.example) + speakBtn('example') + '</div>';
     if(w.exampleCn){
       html += '<div class="fc-example-cn">' + escapeHtml(w.exampleCn) + '</div>';
     }
@@ -736,7 +803,7 @@
     var body = '';
     if(mode === 'en2zh'){
       body += '<div class="fc-mode">英译中</div>';
-      body += '<div class="fc-word">' + escapeHtml(w.en) + '</div>';
+      body += '<div class="fc-word">' + escapeHtml(w.en) + speakBtn('word') + '</div>';
       // "不知道" answers without revealing first, so a graded card always shows the meaning.
       if(!ui.revealAnswer && !ui.feedback){
         body += '<div class="btn-row">' +
@@ -762,15 +829,21 @@
         body += renderExample(w);
       }
       if(!ui.feedback){
-        body += '<div class="btn-row"><input type="text" id="spell-input" placeholder="拼写英文单词" autocomplete="off"></div>';
+        // autocorrect / suggestions off: the phone keyboard would otherwise fix a misspelling
+        // (marked correct) or show the answer in its suggestion bar.
+        body += '<div class="btn-row"><input type="text" id="spell-input" placeholder="拼写英文单词" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>';
+        body += '<div class="fc-hint" id="spell-hint"' + (ui.hintShown ? '' : ' hidden') + '>' + escapeHtml(spellingHint(w.en)) + '</div>';
         body += '<div class="btn-row">' +
           '<button class="btn btn-primary" data-act="submit-spell">提交</button>' +
+          '<button class="btn btn-ghost" data-act="hint"' + (ui.hintShown ? ' disabled' : '') + '>提示</button>' +
           '<button class="btn btn-ghost" data-act="dont-know">不知道</button>' +
         '</div>';
       }
     }
     if(ui.feedback){
-      body += '<div class="feedback ' + ui.feedback.type + '">' + escapeHtml(ui.feedback.text) + '</div>';
+      // In 中译英 the English word only appears in the feedback, so its 🔊 goes there.
+      var feedbackSpeak = (mode === 'zh2en' && ui.feedback.type === 'wrong') ? speakBtn('word') : '';
+      body += '<div class="feedback ' + ui.feedback.type + '">' + escapeHtml(ui.feedback.text) + feedbackSpeak + '</div>';
       if(ui.feedback.type === 'wrong'){
         body += '<div class="btn-row"><button class="btn btn-primary" data-act="next-card">' +
           (needsCopyTask(w) ? 'OK，去抄写' : 'OK，下一个') + '</button></div>';
@@ -805,7 +878,7 @@
 
     if(handwrite){
       return '<div class="paper">' +
-        '<div class="copy-title">这个词错太多次了，请在纸上工整抄写 3 遍：<span style="font-family:var(--font-mono)">' + escapeHtml(word.en) + '</span></div>' +
+        '<div class="copy-title">这个词错太多次了，请在纸上工整抄写 3 遍：<span style="font-family:var(--font-mono)">' + escapeHtml(word.en) + '</span>' + speakBtn('word') + '</div>' +
         '<div class="copy-sub">' + escapeHtml(word.zh) + ' · 在纸上抄完 3 遍后，点下面的按钮</div>' +
         rows +
         '<div class="btn-row" style="margin-top:16px;">' +
@@ -815,11 +888,11 @@
     }
 
     return '<div class="paper">' +
-      '<div class="copy-title">这个词错太多次了，工整抄写 3 遍：<span style="font-family:var(--font-mono)">' + escapeHtml(word.en) + '</span></div>' +
+      '<div class="copy-title">这个词错太多次了，工整抄写 3 遍：<span style="font-family:var(--font-mono)">' + escapeHtml(word.en) + '</span>' + speakBtn('word') + '</div>' +
       '<div class="copy-sub">' + escapeHtml(word.zh) + ' · 抄对才算一遍，抄错不计数</div>' +
       rows +
       errMsg +
-      '<div class="copy-input-wrap"><input type="text" id="copy-input" placeholder="在此输入，回车确认" autocomplete="off"></div>' +
+      '<div class="copy-input-wrap"><input type="text" id="copy-input" placeholder="在此输入，回车确认" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
     '</div>';
   }
 
@@ -908,7 +981,8 @@
     else if(ui.activeTab === 'import') body = renderImportTab();
     else body = renderSettingsTab();
 
-    app.innerHTML = (ui.storageAvailable ? '' : renderStorageWarning()) + renderHeader(c) + renderTabs() + body;
+    var saveWarn = ui.saveFailed ? '<div class="warn-banner">⚠️ 刚才的学习进度<b>没能保存</b>，可能是浏览器存储空间满了。可以清理一下浏览器的缓存和网站数据（注意别清掉本网站的），或者到"导入"页用"替换自建词库"删掉用不到的自建词。</div>' : '';
+    app.innerHTML = (ui.storageAvailable ? '' : renderStorageWarning()) + saveWarn + renderHeader(c) + renderTabs() + body;
     bindEvents();
 
     // focus inputs for a smoother typing flow
@@ -962,12 +1036,35 @@
     var spellInput = document.getElementById('spell-input');
     function doSubmitSpell(){
       if(!spellInput) return;
-      var val = spellInput.value.trim().toLowerCase();
+      var val = spellInput.value.trim();
       if(!val) return;
-      grade(ui.currentWord, val === ui.currentWord.en.toLowerCase());
+      grade(ui.currentWord, spellingMatches(val, ui.currentWord.en));
     }
     if(submitSpell) submitSpell.onclick = doSubmitSpell;
-    if(spellInput) spellInput.addEventListener('keydown', function(e){ if(e.key==='Enter') doSubmitSpell(); });
+    if(spellInput) spellInput.addEventListener('keydown', function(e){
+      // Same IME guard as the copy input: the Enter that commits a pinyin/IME candidate
+      // must not submit a half-typed answer.
+      if(e.isComposing || e.keyCode === 229) return;
+      if(e.key === 'Enter') doSubmitSpell();
+    });
+
+    var hintBtn = app.querySelector('[data-act="hint"]');
+    if(hintBtn) hintBtn.onclick = function(){
+      // Reveal in place instead of re-rendering, so letters already typed stay in the box.
+      ui.hintShown = true;
+      var hint = document.getElementById('spell-hint');
+      if(hint) hint.hidden = false;
+      hintBtn.disabled = true;
+      if(spellInput) spellInput.focus();
+    };
+
+    app.querySelectorAll('[data-speak]').forEach(function(btn){
+      btn.onclick = function(){
+        var w = ui.copyTask ? ui.copyTask.word : ui.currentWord;
+        if(!w) return;
+        speak(btn.getAttribute('data-speak') === 'example' ? w.example : w.en.replace(/[()]/g, ''));
+      };
+    });
 
     var copyInput = document.getElementById('copy-input');
     if(copyInput){
@@ -1049,7 +1146,6 @@
       if(!confirm('确定要清空所有词书的学习进度（包括自建词库的内容）吗？此操作不可撤销。')) return;
       state = defaultState();
       ensureBookLoaded(state.activeBook);
-      updateStreak();
       await persist();
       ui.activeTab='study'; ui.currentWord=null; ui.currentMode=null; ui.revealAnswer=false;
       ui.feedback=null; ui.copyTask=null; ui.importMsg=null; ui.importDraftText=''; ui.bonusMode=false;
@@ -1110,7 +1206,6 @@
     ui.storageAvailable = storageOK;
     await loadState();
     ensureBookLoaded(state.activeBook);  // make sure the active book's words are present (fresh install or after load)
-    updateStreak();
     await persist();
     render();
 
