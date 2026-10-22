@@ -5,17 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>四级词库 · 错词抄写本</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#F4F6FA" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0F1218" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F6FA">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="错词抄写本">
 <style>
-  /* All colors live in these variables; dark mode below only redefines them.
-     When adding a color, add it to both sets — don't hard-code #fff etc. */
+  /* All colors live in these variables. :root is the 浅色 theme; [data-theme="soft"] (柔和)
+     and [data-theme="dark"] (黑暗) redefine them (see the theme section in the script).
+     When adding a color, add it to all three sets — don't hard-code #fff etc. */
   :root{
-    color-scheme: light dark;
+    color-scheme: light;
     --bg: #F4F6FA;
     --surface: #FFFFFF;
     --surface-2: #F1F4F9;
@@ -37,26 +37,47 @@
     --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     --font-mono: "SF Mono", "Cascadia Mono", "Consolas", "Courier New", monospace;
   }
-  @media (prefers-color-scheme: dark){
-    :root{
-      --bg: #0F1218;
-      --surface: #181C25;
-      --surface-2: #212734;
-      --border: #2A3140;
-      --text: #E8ECF3;
-      --text-soft: #98A2B3;
-      --accent: #7C93FF;
-      --accent-soft: rgba(124,147,255,0.14);
-      --on-accent: #10131A;   /* dark text: the lighter dark-mode accents are too bright for white text */
-      --success: #3CCB8F;
-      --success-soft: rgba(60,203,143,0.14);
-      --danger: #FF6B6E;
-      --danger-soft: rgba(255,107,110,0.14);
-      --gold: #E3B341;
-      --gold-soft: rgba(227,179,65,0.14);
-      --shadow: 0 0 0 1px var(--border);
-      --shadow-sm: 0 0 0 1px var(--border);
-    }
+  /* 柔和: warm beige, lower contrast, easy on the eyes */
+  :root[data-theme="soft"]{
+    color-scheme: light;
+    --bg: #F3EEE3;
+    --surface: #FBF8F1;
+    --surface-2: #EFE8DA;
+    --border: #E2D9C7;
+    --text: #3B3A36;
+    --text-soft: #7D776B;
+    --accent: #5B7DB1;
+    --accent-soft: #E5EAF2;
+    --on-accent: #FFFFFF;
+    --success: #4A8A5F;
+    --success-soft: #E4EFE5;
+    --danger: #C0574F;
+    --danger-soft: #F6E3DE;
+    --gold: #A07428;
+    --gold-soft: #F3E8D2;
+    --shadow: 0 1px 2px rgba(90,70,30,0.04), 0 4px 14px rgba(90,70,30,0.06);
+    --shadow-sm: 0 1px 2px rgba(90,70,30,0.08);
+  }
+  /* 黑暗 */
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg: #0F1218;
+    --surface: #181C25;
+    --surface-2: #212734;
+    --border: #2A3140;
+    --text: #E8ECF3;
+    --text-soft: #98A2B3;
+    --accent: #7C93FF;
+    --accent-soft: rgba(124,147,255,0.14);
+    --on-accent: #10131A;   /* dark text: the lighter dark-mode accents are too bright for white text */
+    --success: #3CCB8F;
+    --success-soft: rgba(60,203,143,0.14);
+    --danger: #FF6B6E;
+    --danger-soft: rgba(255,107,110,0.14);
+    --gold: #E3B341;
+    --gold-soft: rgba(227,179,65,0.14);
+    --shadow: 0 0 0 1px var(--border);
+    --shadow-sm: 0 0 0 1px var(--border);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;height:100%;}
@@ -81,6 +102,15 @@
     margin-bottom:14px;
   }
   .cover h1{font-size:20px;margin:0;font-weight:700;letter-spacing:0.2px;line-height:1.3;}
+  .cover-title{flex:1;min-width:0;}
+  .nowrap{white-space:nowrap;}   /* narrow phones: break the title only between book name and app name */
+  .cover-side{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .theme-btn{
+    border:none;cursor:pointer;border-radius:999px;padding:8px 12px;min-height:36px;
+    background:var(--surface-2);color:var(--text);font-size:13px;font-weight:600;white-space:nowrap;
+  }
+  .theme-btn:active{transform:scale(0.96);}
+  @media (max-width: 380px){ .theme-btn .theme-name{display:none;} }
   .stamp{
     min-width:64px;padding:8px 10px;border-radius:12px;
     background:var(--accent-soft);color:var(--accent);
@@ -262,6 +292,16 @@
   .book-badge.custom{background:var(--gold-soft);color:var(--gold);}
   .book-current{font-size:12px;color:var(--accent);font-weight:700;white-space:nowrap;}
 </style>
+<script>
+  // Set the color theme before the page paints so it doesn't flash the wrong colors.
+  // Same rule as resolvedTheme() in the main script: 'auto' = 黑暗 if the system is dark, else 柔和.
+  (function(){
+    var t = 'auto';
+    try{ t = localStorage.getItem('vocab-app-theme') || 'auto'; }catch(e){}
+    if(t === 'auto') t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'soft';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 </head>
 <body>
 <div class="wrap" id="app"><div class="loading">正在打开错词本…</div></div>
@@ -732,6 +772,44 @@
     return shown + '（' + letters + ' 个字母）';
   }
 
+  // ---------- theme ----------
+  // Stored on its own key, not in `state`: the <head> script needs it before the app loads,
+  // and "重置全部进度" shouldn't reset the colors. 'auto' follows the system (dark → 黑暗,
+  // otherwise 柔和); keep that rule in sync with the <head> script.
+  var THEME_KEY = 'vocab-app-theme';
+  var THEMES = [
+    { id:'light', name:'浅色', icon:'☀️' },
+    { id:'soft',  name:'柔和', icon:'🌿' },
+    { id:'dark',  name:'黑暗', icon:'🌙' }
+  ];
+  var THEME_BAR_COLORS = { light:'#F4F6FA', soft:'#F3EEE3', dark:'#0F1218' };
+  var darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function themeSetting(){
+    try{ return localStorage.getItem(THEME_KEY) || 'auto'; }catch(e){ return 'auto'; }
+  }
+  function resolvedTheme(){
+    var t = themeSetting();
+    if(t === 'light' || t === 'soft' || t === 'dark') return t;
+    return (darkQuery && darkQuery.matches) ? 'dark' : 'soft';
+  }
+  function themeInfo(id){ return THEMES.filter(function(t){ return t.id === id; })[0] || THEMES[1]; }
+  function applyTheme(){
+    var t = resolvedTheme();
+    document.documentElement.setAttribute('data-theme', t);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if(meta) meta.setAttribute('content', THEME_BAR_COLORS[t]);
+  }
+  function setTheme(t){
+    try{ localStorage.setItem(THEME_KEY, t); }catch(e){ /* not saved, still applies for this visit */ }
+    applyTheme();
+    render();
+  }
+  // Header button: 浅色 → 柔和 → 黑暗 → 浅色 …
+  function cycleTheme(){
+    var ids = THEMES.map(function(t){ return t.id; });
+    setTheme(ids[(ids.indexOf(resolvedTheme()) + 1) % ids.length]);
+  }
+
   // ---------- pronunciation ----------
   var canSpeak = ('speechSynthesis' in window) && typeof SpeechSynthesisUtterance !== 'undefined';
   function speak(text){
@@ -776,10 +854,15 @@
   function renderHeader(c){
     var t = todayStats();
     var pct = t.newGoal > 0 ? Math.min(100, Math.round(t.newDone / t.newGoal * 100)) : 0;
+    var theme = themeInfo(resolvedTheme());
     return '' +
     '<div class="cover">' +
-      '<div><h1>' + escapeHtml(activeBookName()) + ' · 错词抄写本</h1></div>' +
-      '<div class="stamp"><div class="num">' + displayStreak() + '</div><div class="lbl">连续天数</div></div>' +
+      '<div class="cover-title"><h1><span class="nowrap">' + escapeHtml(activeBookName()) + ' ·</span> <span class="nowrap">错词抄写本</span></h1></div>' +
+      '<div class="cover-side">' +
+        '<button class="theme-btn" data-act="theme" title="切换颜色" aria-label="切换颜色，当前：' + theme.name + '">' +
+          theme.icon + '<span class="theme-name"> ' + theme.name + '</span></button>' +
+        '<div class="stamp"><div class="num">' + displayStreak() + '</div><div class="lbl">连续天数</div></div>' +
+      '</div>' +
     '</div>' +
     '<div class="daily-bar">' +
       '<div class="daily-text">今日新词 ' + t.newDone + '/' + t.newGoal + ' &nbsp;·&nbsp; 待复习 ' + t.dueRemaining + '</div>' +
@@ -990,7 +1073,17 @@
 
   function renderSettingsTab(){
     var s = state.settings;
+    var ts = themeSetting();
+    var themeOpts = [{ id:'auto', name:'跟随系统（系统深色时用黑暗，否则用柔和）' }].concat(THEMES);
     return '<div class="paper">' +
+      '<div class="field">' +
+        '<label>外观</label>' +
+        '<div class="hint">点了立即生效，不用点下面的"保存设置"。顶部的颜色按钮也能快速切换。</div>' +
+        themeOpts.map(function(o){
+          return '<div class="checkline"><input type="radio" name="theme" id="theme-' + o.id + '" value="' + o.id + '"' +
+            (ts === o.id ? ' checked' : '') + '> ' + (o.icon ? o.icon + ' ' : '') + o.name + '</div>';
+        }).join('') +
+      '</div>' +
       '<div class="field">' +
         '<label>每日新词目标</label>' +
         '<div class="hint">每天最多学这么多个"没背过的新词"，学完之后会优先安排复习到期的词。参照艾宾浩斯记忆曲线，学过的词会在 1、2、4、7、15、30 天后依次安排复习，答对才会进入下一个更长的间隔，答错就退回第一天重新开始</div>' +
@@ -1179,6 +1272,12 @@
     var importReplace = app.querySelector('[data-act="import-replace"]');
     if(importReplace) importReplace.onclick = function(){ doImport(true); };
 
+    var themeBtn = app.querySelector('[data-act="theme"]');
+    if(themeBtn) themeBtn.onclick = cycleTheme;
+    app.querySelectorAll('input[name="theme"]').forEach(function(radio){
+      radio.onchange = function(){ if(radio.checked) setTheme(radio.value); };
+    });
+
     var saveSettings = app.querySelector('[data-act="save-settings"]');
     if(saveSettings) saveSettings.onclick = async function(){
       var t = parseInt(document.getElementById('threshold-input').value, 10);
@@ -1256,6 +1355,20 @@
   }
 
   async function init(){
+    applyTheme();
+    // In 'auto', follow the system switching between light and dark while the app is open.
+    // Also re-check when the app comes back to the foreground (e.g. after flipping dark mode
+    // in the phone's control center), in case the change event was missed.
+    if(darkQuery){
+      var onSystemTheme = function(){
+        if(themeSetting() !== 'auto' || document.documentElement.getAttribute('data-theme') === resolvedTheme()) return;
+        applyTheme();
+        if(state) render();
+      };
+      if(darkQuery.addEventListener) darkQuery.addEventListener('change', onSystemTheme);
+      else if(darkQuery.addListener) darkQuery.addListener(onSystemTheme);
+      document.addEventListener('visibilitychange', function(){ if(!document.hidden) onSystemTheme(); });
+    }
     ui.storageAvailable = storageOK;
     await loadState();
     ensureBookLoaded(state.activeBook);  // make sure the active book's words are present (fresh install or after load)
