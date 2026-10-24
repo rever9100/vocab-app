@@ -383,7 +383,7 @@
       loadedBooks: {},              // bookId -> true once its words are inserted into state.words
       activeBook: firstBook,        // which book the study tab is currently working through
       customBookName: '我的词库',
-      settings: { threshold: 2, modeEn2Zh: true, modeZh2En: true, dailyNewGoal: 30, copyMode: 'type', unitRange: {} },
+      settings: { threshold: 2, modeEn2Zh: true, modeZh2En: true, dailyNewGoal: 30, copyMode: 'off', unitRange: {} },
       streakDays: 0,
       lastActiveDate: null,
       dailyProgress: { date: null, newIntroducedCount: 0, reviewsDoneToday: 0 }
@@ -554,7 +554,7 @@
     if(state.settings.modeEn2Zh == null) state.settings.modeEn2Zh = true;
     if(state.settings.modeZh2En == null) state.settings.modeZh2En = true;
     if(state.settings.dailyNewGoal == null) state.settings.dailyNewGoal = 30;
-    if(state.settings.copyMode == null) state.settings.copyMode = 'type';
+    if(state.settings.copyMode == null) state.settings.copyMode = 'off';
     if(!state.settings.unitRange) state.settings.unitRange = {};
     if(!state.loadedBooks) state.loadedBooks = {};
     if(!state.customBookName) state.customBookName = '我的词库';
@@ -1188,7 +1188,7 @@
         '<div class="hint">一个词错太多次时，用哪种方式罚抄巩固</div>' +
         '<div class="checkline"><input type="radio" name="copymode" id="copymode-type" value="type" ' + (s.copyMode==='type'?'checked':'') + '> 打字抄写（在格子里打对单词才算一遍）</div>' +
         '<div class="checkline"><input type="radio" name="copymode" id="copymode-handwrite" value="handwrite" ' + (s.copyMode==='handwrite'?'checked':'') + '> 手写抄写（在纸上抄，抄完点按钮确认）</div>' +
-        '<div class="checkline"><input type="radio" name="copymode" id="copymode-off" value="off" ' + (s.copyMode==='off'?'checked':'') + '> 不抄写（答错就跳过，不罚抄）</div>' +
+        '<div class="checkline"><input type="radio" name="copymode" id="copymode-off" value="off" ' + (s.copyMode==='off'?'checked':'') + '> 不抄写（答错就跳过，不罚抄，默认）</div>' +
       '</div>' +
       '<div class="btn-row" style="justify-content:flex-start;">' +
         '<button class="btn btn-primary" data-act="save-settings">保存设置</button>' +
