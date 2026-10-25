@@ -273,11 +273,17 @@
     background:var(--surface-2);color:var(--text);
   }
   .checkline{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:14px;line-height:1.5;}
+  .save-note{font-size:12.5px;color:var(--text-soft);background:var(--surface-2);border-radius:10px;padding:8px 12px;margin-bottom:18px;transition:color .2s,background .2s;}
+  .save-note.saved{color:var(--success);background:var(--success-soft);}
   .hint.estimate{margin:10px 0 0;color:var(--text);}
   .hint.estimate b{color:var(--accent);}
-  .unit-range{display:flex;align-items:center;gap:8px;font-size:14px;flex-wrap:wrap;}
+  /* unit range picker gets its own full-width line under a book row */
+  .book-row{flex-wrap:wrap;}
+  .book-main{flex:1;min-width:0;}
+  .book-extra{flex-basis:100%;}
+  .unit-range{display:flex;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;margin-top:2px;color:var(--text-soft);}
   .unit-select{
-    font:inherit;font-size:15px;padding:8px 10px;border:1.5px solid transparent;border-radius:10px;
+    font:inherit;font-size:14px;padding:6px 8px;border:1.5px solid transparent;border-radius:10px;
     background:var(--surface-2);color:var(--text);
   }
   .unit-select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft);}
@@ -539,6 +545,7 @@
         var parsed = JSON.parse(res.value);
         if(parsed && Array.isArray(parsed.words) && parsed.words.length){
           state = parsed;
+          lastSavedJson = res.value;
           migrateState();
           return;
         }
@@ -591,15 +598,37 @@
     }
   }
 
+  var lastSavedJson = null;   // what this window last read or wrote, see reloadIfChangedElsewhere()
   async function persist(){
     if(!storageOK) return;
     try{
-      await localStore.set(STORAGE_KEY, JSON.stringify(state));
+      var json = JSON.stringify(state);
+      await localStore.set(STORAGE_KEY, json);
+      lastSavedJson = json;
       ui.saveFailed = false;
     }catch(e){
       console.error('保存失败', e);
       ui.saveFailed = true;   // shown as a banner on the next render
     }
+  }
+
+  // Another window of the app (e.g. the installed app and a browser tab) may have saved newer
+  // data while this one sat in the background. Pick that up, instead of overwriting it with this
+  // window's stale copy on the next answer — that used to undo settings changed elsewhere.
+  function reloadIfChangedElsewhere(){
+    if(!storageOK || !state) return;
+    var v;
+    try{ v = localStorage.getItem(STORAGE_KEY); }catch(e){ return; }
+    if(!v || v === lastSavedJson) return;
+    try{
+      var parsed = JSON.parse(v);
+      if(!parsed || !Array.isArray(parsed.words)) return;
+      state = parsed;
+      lastSavedJson = v;
+      migrateState();
+    }catch(e){ return; }
+    ui.currentWord = null; ui.feedback = null; ui.revealAnswer = false; ui.copyTask = null; ui.bonusMode = false;
+    render();
   }
 
   // The streak counts days the user actually answered something (called from grade()).
@@ -960,6 +989,7 @@
             '<div class="book-stat">' + plan + '</div>' +
           '</div>' +
           '<div class="book-action">' + actives + '</div>' +
+          (units ? '<div class="book-extra">' + renderUnitRangePicker(b.id) + '</div>' : '') +
         '</div>';
     }).join('');
     return '<div class="paper">' +
@@ -992,7 +1022,7 @@
       // If the day's quota isn't used up only because the chosen units ran out, say so.
       var range = unitRange(state.activeBook);
       var rangeDone = range && range.limited && todayStats().newDone < todayStats().newGoal && remainingNewWords(state.activeBook) === 0
-        ? '<div class="msg-line">' + unitRangeLabel(range) + ' 的新词已经全部学过了，想学新的可以去"设置"里放宽背诵范围。</div>' : '';
+        ? '<div class="msg-line">' + unitRangeLabel(range) + ' 的新词已经全部学过了，想学新的可以去"词书"页放宽背诵范围。</div>' : '';
       return '<div class="paper"><div class="done-screen">' +
         '<div class="big">🎉</div>' +
         '<div class="msg-line">今天的新词和复习任务都完成啦</div>' + rangeDone +
@@ -1135,22 +1165,20 @@
     '</div>';
   }
 
-  // Only for books split into units (词达人四级): pick which units new words come from.
-  function renderUnitRangeField(){
-    var r = unitRange(state.activeBook);
+  // Only for books split into units (词达人四级), shown in that book's row on the 词书 page:
+  // pick which units new words come from. Saved as soon as it changes.
+  function renderUnitRangePicker(bookId){
+    var r = unitRange(bookId);
     if(!r) return '';
-    function select(id, value){
+    function select(end, value){
       var opts = '';
       for(var i = 1; i <= r.total; i++){
         opts += '<option value="' + i + '"' + (i === value ? ' selected' : '') + '>Unit ' + i + '</option>';
       }
-      return '<select class="unit-select" id="' + id + '">' + opts + '</select>';
+      return '<select class="unit-select" data-book="' + escapeHtml(bookId) + '" data-end="' + end + '">' + opts + '</select>';
     }
-    return '<div class="field">' +
-      '<label>背诵范围（' + escapeHtml(activeBookName()) + '）</label>' +
-      '<div class="hint">新词只从这几个单元里出；以前学过的词不管在不在范围里，到期都照常复习，不会忘。</div>' +
-      '<div class="unit-range">从 ' + select('unit-from', r.from) + ' 到 ' + select('unit-to', r.to) + '</div>' +
-    '</div>';
+    return '<div class="unit-range">背诵范围 ' + select('from', r.from) + ' 到 ' + select('to', r.to) + '</div>' +
+      '<div class="book-stat">新词只从这几个单元里出，学过的词照常复习。</div>';
   }
 
   function renderSettingsTab(){
@@ -1158,9 +1186,10 @@
     var ts = themeSetting();
     var themeOpts = [{ id:'auto', name:'跟随系统（系统深色时用黑暗，否则用柔和）' }].concat(THEMES);
     return '<div class="paper">' +
+      '<div class="save-note" id="save-note">所有设置改了就自动保存，不用另外点保存。</div>' +
       '<div class="field">' +
         '<label>外观</label>' +
-        '<div class="hint">点了立即生效，不用点下面的"保存设置"。顶部的颜色按钮也能快速切换。</div>' +
+        '<div class="hint">顶部的颜色按钮也能快速切换。</div>' +
         themeOpts.map(function(o){
           return '<div class="checkline"><input type="radio" name="theme" id="theme-' + o.id + '" value="' + o.id + '"' +
             (ts === o.id ? ' checked' : '') + '> ' + (o.icon ? o.icon + ' ' : '') + o.name + '</div>';
@@ -1171,8 +1200,8 @@
         '<div class="hint">每天最多学这么多个"没背过的新词"，学完之后会优先安排复习到期的词。参照艾宾浩斯记忆曲线，学过的词会在 1、2、4、7、15、30 天后依次安排复习，答对才会进入下一个更长的间隔，答错就退回第一天重新开始。这个数量是所有词书共用的。</div>' +
         '<input type="number" class="num-input" id="daily-goal-input" min="1" max="200" value="' + s.dailyNewGoal + '">' +
         '<div class="hint estimate" id="finish-estimate">' + finishEstimateText(state.activeBook, s.dailyNewGoal) + '</div>' +
+        (unitRange(state.activeBook) ? '<div class="hint">只背某几个单元？在"词书"页这本书下面选背诵范围。</div>' : '') +
       '</div>' +
-      renderUnitRangeField() +
       '<div class="field">' +
         '<label>触发抄写任务的门槛</label>' +
         '<div class="hint">这个单词累计答错达到多少次，就要抄写 3 遍</div>' +
@@ -1191,7 +1220,6 @@
         '<div class="checkline"><input type="radio" name="copymode" id="copymode-off" value="off" ' + (s.copyMode==='off'?'checked':'') + '> 不抄写（答错就跳过，不罚抄，默认）</div>' +
       '</div>' +
       '<div class="btn-row" style="justify-content:flex-start;">' +
-        '<button class="btn btn-primary" data-act="save-settings">保存设置</button>' +
         '<button class="btn btn-ghost" data-act="reset-all">重置全部进度</button>' +
       '</div>' +
     '</div>';
@@ -1362,48 +1390,73 @@
       radio.onchange = function(){ if(radio.checked) setTheme(radio.value); };
     });
 
-    // Unit range from the settings selects (not saved yet); keeps from <= to.
-    function pickedUnitRange(){
-      var fromSel = document.getElementById('unit-from'), toSel = document.getElementById('unit-to');
-      if(!fromSel || !toSel) return null;
-      var a = parseInt(fromSel.value, 10), b = parseInt(toSel.value, 10);
-      return { from: Math.min(a, b), to: Math.max(a, b) };
-    }
-    // Live "about N days to finish" while the daily goal or unit range is being changed.
+    // 词书 page: unit range picker of a book with units. Saved right away; keeps from <= to.
+    app.querySelectorAll('.unit-select').forEach(function(sel){
+      sel.addEventListener('change', async function(){
+        var bookId = sel.getAttribute('data-book');
+        var pair = app.querySelectorAll('.unit-select[data-book="' + bookId + '"]');
+        var a = parseInt(pair[0].value, 10), b = parseInt(pair[1].value, 10);
+        state.settings.unitRange[bookId] = { from: Math.min(a, b), to: Math.max(a, b) };
+        if(bookId === state.activeBook) ui.currentWord = null;   // the card on screen may be outside the new range
+        await persist();
+        render();
+      });
+    });
+
+    // Live "about N days to finish" while the daily goal is being changed.
     var goalInput = document.getElementById('daily-goal-input');
     var estimate = document.getElementById('finish-estimate');
     function updateEstimate(){
       if(!estimate) return;
       var g = parseInt(goalInput.value, 10);
       if(!(g >= 1 && g <= 200)){ estimate.textContent = '请输入 1～200 之间的数字。'; return; }
-      var picked = pickedUnitRange();
-      var r = unitRange(state.activeBook);
-      if(picked && r) r = { from: picked.from, to: picked.to, total: r.total, limited: picked.from > 1 || picked.to < r.total };
-      estimate.innerHTML = finishEstimateText(state.activeBook, g, r);
+      estimate.innerHTML = finishEstimateText(state.activeBook, g);
     }
-    if(goalInput) goalInput.addEventListener('input', updateEstimate);
-    app.querySelectorAll('.unit-select').forEach(function(sel){ sel.addEventListener('change', updateEstimate); });
-
-    var saveSettings = app.querySelector('[data-act="save-settings"]');
-    if(saveSettings) saveSettings.onclick = async function(){
+    // Settings save as soon as they change. There used to be a "保存设置" button at the bottom;
+    // people changed a value, left the page without pressing it, and lost the change.
+    // Out-of-range numbers are not saved; the field snaps back when it loses focus.
+    function readSettingsForm(){
+      var s = state.settings;
+      var g = parseInt(goalInput.value, 10);
+      if(g >= 1 && g <= 200) s.dailyNewGoal = g;
       var t = parseInt(document.getElementById('threshold-input').value, 10);
-      state.settings.threshold = (t>=1 && t<=5) ? t : 2;
-      var g = parseInt(document.getElementById('daily-goal-input').value, 10);
-      state.settings.dailyNewGoal = (g>=1 && g<=200) ? g : 30;
-      var picked = pickedUnitRange();
-      if(picked){
-        state.settings.unitRange[state.activeBook] = picked;
-        ui.currentWord = null;   // the card on screen may be outside the new range
-      }
-      state.settings.modeEn2Zh = document.getElementById('mode-en2zh').checked;
-      state.settings.modeZh2En = document.getElementById('mode-zh2en').checked;
-      var cm = 'type';
-      if(document.getElementById('copymode-handwrite').checked) cm = 'handwrite';
-      else if(document.getElementById('copymode-off').checked) cm = 'off';
-      state.settings.copyMode = cm;
+      if(t >= 1 && t <= 5) s.threshold = t;
+      s.modeEn2Zh = document.getElementById('mode-en2zh').checked;
+      s.modeZh2En = document.getElementById('mode-zh2en').checked;
+      var cm = app.querySelector('input[name="copymode"]:checked');
+      if(cm) s.copyMode = cm.value;
+    }
+    async function saveSettingsForm(rerender){
+      readSettingsForm();
       await persist();
-      render();
-    };
+      if(rerender) render();
+      var note = document.getElementById('save-note');
+      if(note){
+        note.textContent = '✓ 已保存';
+        note.classList.add('saved');
+        clearTimeout(ui.saveNoteTimer);
+        ui.saveNoteTimer = setTimeout(function(){
+          var n = document.getElementById('save-note');
+          if(n){ n.textContent = '所有设置改了就自动保存，不用另外点保存。'; n.classList.remove('saved'); }
+        }, 1500);
+      }
+    }
+    // Number fields save while typing without re-rendering (keeps the cursor, and a re-render
+    // on blur would swallow a tap on another tab). When left with an invalid number, put the
+    // saved value back.
+    function numberField(input, min, max, key){
+      if(!input) return;
+      input.addEventListener('input', function(){ updateEstimate(); saveSettingsForm(false); });
+      input.addEventListener('change', function(){
+        var v = parseInt(input.value, 10);
+        if(!(v >= min && v <= max)){ input.value = state.settings[key]; updateEstimate(); }
+      });
+    }
+    numberField(goalInput, 1, 200, 'dailyNewGoal');
+    numberField(document.getElementById('threshold-input'), 1, 5, 'threshold');
+    app.querySelectorAll('#mode-en2zh, #mode-zh2en, input[name="copymode"]').forEach(function(el){
+      el.addEventListener('change', function(){ saveSettingsForm(true); });
+    });
     var resetAll = app.querySelector('[data-act="reset-all"]');
     if(resetAll) resetAll.onclick = async function(){
       if(!confirm('确定要清空所有词书的学习进度（包括自建词库的内容）吗？此操作不可撤销。')) return;
@@ -1485,6 +1538,9 @@
     ensureBookLoaded(state.activeBook);  // make sure the active book's words are present (fresh install or after load)
     await persist();
     render();
+
+    window.addEventListener('storage', function(e){ if(e.key === STORAGE_KEY) reloadIfChangedElsewhere(); });
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden) reloadIfChangedElsewhere(); });
 
     // Enter on the wrong-answer screen = OK. The Enter that submitted a spelling bubbles up
     // here right after the screen appears, so ignore anything within the first moment.
