@@ -171,6 +171,13 @@
   .fc-example{font-size:14px;line-height:1.6;color:var(--text);}
   .fc-example-cn{font-size:13px;line-height:1.6;color:var(--text-soft);margin-top:2px;}
   .fc-hint{font-family:var(--font-mono);font-size:18px;letter-spacing:2px;color:var(--text-soft);margin-top:12px;}
+  .fc-phonetic{font-size:14px;color:var(--text-soft);margin:-12px 0 16px;}
+  .feedback + .fc-phonetic{margin:10px 0 12px;}
+  .fc-phrases{text-align:left;border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin:0 0 12px;}
+  .fc-phrases-title{font-size:12px;color:var(--text-soft);margin-bottom:4px;}
+  .fc-phrase{font-size:13.5px;line-height:1.7;color:var(--text-soft);}
+  .fc-phrase .en{color:var(--text);font-weight:600;margin-right:4px;}
+  .file-btn{display:inline-flex;align-items:center;}
   .speak-btn{
     border:none;background:transparent;cursor:pointer;padding:2px 6px;margin-left:4px;
     font-size:0.6em;vertical-align:middle;line-height:1;border-radius:8px;
@@ -321,6 +328,7 @@
 <div class="wrap" id="app"><div class="loading">正在打开错词本…</div></div>
 
 <script src="wordbooks-data.js"></script>
+<script src="wordbooks-extra.js"></script>
 <script>
 (function(){
   var STORAGE_KEY = 'vocab-app-state-v1';
@@ -501,6 +509,8 @@
     importDraftText: '',
     storageAvailable: true,
     saveFailed: false,     // last persist() threw (e.g. storage full)
+    currentRecheck: false, // the card on screen is a same-day re-check (set in nextCard)
+    backupMsg: null,       // result line under 设置 → 备份
     hintShown: false,      // 中译英 hint revealed for the current card
     bonusMode: false,
     lastWordId: null
@@ -594,7 +604,8 @@
   function ensureDailyProgress(){
     var today = todayStr();
     if(!state.dailyProgress || state.dailyProgress.date !== today){
-      state.dailyProgress = { date: today, newIntroducedCount: 0, reviewsDoneToday: 0 };
+      // cardsDone: cards graded today (paces the same-day re-checks); extraNew: "再学 10 个新词"
+      state.dailyProgress = { date: today, newIntroducedCount: 0, reviewsDoneToday: 0, cardsDone: 0, extraNew: 0 };
     }
   }
 
@@ -666,12 +677,31 @@
   }
 
   // Daily new-word quota is shared across the whole app (not per-book), so studying two
-  // books in one day still respects a single "30 new words a day" budget.
-  // pool=='today': due reviews + today's fresh new-word quota, within the active book
+  // books in one day still respects a single "30 new words a day" budget. "再学 10 个新词"
+  // on the done screen adds to it for the day (dailyProgress.extraNew).
+  function dailyNewQuota(){ return (state.settings.dailyNewGoal || 0) + (state.dailyProgress.extraNew || 0); }
+
+  // Same-day re-check, closer to the Ebbinghaus curve's short intervals: a word learned today,
+  // or any word answered wrong, comes back once more later today, after RELEARN_GAP other
+  // cards (word.againDate = today, word.againAfter = dailyProgress.cardsDone threshold).
+  var RELEARN_GAP = 5;
+  function againToday(){
+    var today = todayStr();
+    return state.words.filter(function(w){ return w.againDate === today; });
+  }
+  // Reviews come from every book, not just the active one, so words learned in another book
+  // don't pile up unseen after switching books. New words only come from the active book.
+  function dueReviews(){
+    var today = todayStr();
+    return state.words.filter(function(w){
+      return w.introducedDate && w.nextReviewDate && w.nextReviewDate <= today && w.againDate !== today;
+    });
+  }
+
+  // pool=='today': due reviews (all books) + same-day re-checks + today's new-word quota (active book)
   // pool=='bonus': any already-introduced word in the active book, ignoring due dates
   function pickWord(poolMode){
     ensureDailyProgress();
-    var today = todayStr();
     var pool0 = activeWords();
     if(poolMode === 'bonus'){
       var bonusPool = pool0.filter(function(w){ return w.introducedDate; });
@@ -682,15 +712,17 @@
       }
       return bonusPool[Math.floor(Math.random()*bonusPool.length)];
     }
-    var dueWords = pool0.filter(function(w){
-      return w.introducedDate && w.nextReviewDate && w.nextReviewDate <= today;
-    });
-    var remainingQuota = Math.max(0, (state.settings.dailyNewGoal||0) - state.dailyProgress.newIntroducedCount);
+    var dueWords = dueReviews();
+    var remainingQuota = Math.max(0, dailyNewQuota() - state.dailyProgress.newIntroducedCount);
     var range = unitRange(state.activeBook);   // new words only come from the chosen units
     var newWords = remainingQuota > 0
       ? pool0.filter(function(w){ return !w.introducedDate && inRange(w, range); }).slice(0, remainingQuota)
       : [];
-    var pool = dueWords.concat(newWords);
+    var cardsDone = state.dailyProgress.cardsDone || 0;
+    var again = againToday();
+    var againReady = again.filter(function(w){ return cardsDone >= (w.againAfter || 0); });
+    var pool = dueWords.concat(newWords, againReady);
+    if(pool.length === 0) pool = again;   // nothing else left: re-check the rest now
     if(pool.length === 0) return null;
     // Avoid showing the exact same word twice in a row: if there's more than one
     // candidate, drop the previous word from this draw. (If it's the only one left,
@@ -719,6 +751,8 @@
     var w = pickWord(ui.bonusMode ? 'bonus' : 'today');
     if(w) ui.lastWordId = w.id;
     ui.currentWord = w;
+    // decided when the card is drawn, so grading it doesn't relabel the answer screen
+    ui.currentRecheck = !!(w && !ui.bonusMode && w.againDate === todayStr());
     ui.currentMode = w ? pickMode() : null;
   }
 
@@ -726,17 +760,19 @@
     ensureDailyProgress();
     var today = todayStr();
     var wasNew = !word.introducedDate;
+    var recheck = !ui.bonusMode && word.againDate === today;   // the same-day second look
     if(wasNew){
       word.introducedDate = today;
       state.dailyProgress.newIntroducedCount++;
-    } else if(!ui.bonusMode){
+    } else if(!ui.bonusMode && !recheck){
       state.dailyProgress.reviewsDoneToday++;
     }
+    if(!ui.bonusMode) state.dailyProgress.cardsDone = (state.dailyProgress.cardsDone || 0) + 1;
     updateStreak();
     if(correct){
-      // Extra practice ("bonus") doesn't move the schedule forward, otherwise a few rounds
-      // in one evening could push a word to "mastered" and skip the spaced intervals.
-      if(!ui.bonusMode){
+      // Extra practice ("bonus") and the same-day re-check don't move the schedule forward,
+      // otherwise a word could be pushed toward "mastered" without the spaced intervals.
+      if(!ui.bonusMode && !recheck){
         var s = word.reviewStage || 0;
         if(s < REVIEW_INTERVALS.length){
           word.nextReviewDate = addDays(today, REVIEW_INTERVALS[s]);
@@ -755,6 +791,14 @@
         ? (word.en + ' → ' + word.zh)
         : (word.zh + ' → ' + word.en);
       ui.feedback = { type:'wrong', text:'✗ 答错了 · ' + answer };
+    }
+    if(!ui.bonusMode){
+      if(!correct || (wasNew && correct)){
+        word.againDate = today;
+        word.againAfter = state.dailyProgress.cardsDone + RELEARN_GAP;
+      } else if(recheck){
+        word.againDate = null;   // passed the re-check
+      }
     }
     await persist();
     if(!correct) ui.feedbackShownAt = Date.now();
@@ -913,20 +957,44 @@
 
   function todayStats(){
     ensureDailyProgress();
-    var today = todayStr();
-    var dueRemaining = activeWords().filter(function(w){
-      return w.introducedDate && w.nextReviewDate && w.nextReviewDate <= today;
-    }).length;
     return {
       newDone: state.dailyProgress.newIntroducedCount,
-      newGoal: state.settings.dailyNewGoal || 0,
-      dueRemaining: dueRemaining
+      newGoal: dailyNewQuota(),
+      dueRemaining: dueReviews().length + againToday().length   // all books, incl. same-day re-checks
     };
   }
 
-  function activeBookName(){
-    var b = allBooks().filter(function(x){ return x.id === state.activeBook; })[0];
+  function bookName(id){
+    var b = allBooks().filter(function(x){ return x.id === id; })[0];
     return b ? b.name : '词库';
+  }
+  function activeBookName(){ return bookName(state.activeBook); }
+
+  // Label above the card: test mode, plus the unit, or which book a cross-book review came from.
+  function cardTag(w, modeLabel){
+    var extra = '';
+    if(w.book !== state.activeBook) extra = ' · 复习' + bookName(w.book);
+    else if(w.unit) extra = ' · Unit ' + w.unit;
+    if(ui.currentRecheck) extra += ' · 再考一遍';
+    return '<div class="fc-mode">' + modeLabel + escapeHtml(extra) + '</div>';
+  }
+
+  // Phonetic + common phrases from wordbooks-extra.js (window.WORD_EXTRAS), looked up by
+  // the word's first spelling; not copied into saved progress.
+  function wordExtras(w){
+    var key = w.en.split('/')[0].replace(/\([^)]*\)/g, '').toLowerCase();
+    return (window.WORD_EXTRAS || {})[key] || null;
+  }
+  function renderPhonetic(w){
+    var x = wordExtras(w);
+    return x && x[0] ? '<div class="fc-phonetic">美 /' + escapeHtml(x[0]) + '/</div>' : '';
+  }
+  function renderPhrases(w){
+    var x = wordExtras(w);
+    if(!x || !x[1] || !x[1].length) return '';
+    return '<div class="fc-phrases"><div class="fc-phrases-title">常用短语</div>' + x[1].map(function(p){
+      return '<div class="fc-phrase"><span class="en">' + escapeHtml(p[0]) + '</span> ' + escapeHtml(p[1]) + '</div>';
+    }).join('') + '</div>';
   }
 
   function renderHeader(c){
@@ -1023,17 +1091,22 @@
       var range = unitRange(state.activeBook);
       var rangeDone = range && range.limited && todayStats().newDone < todayStats().newGoal && remainingNewWords(state.activeBook) === 0
         ? '<div class="msg-line">' + unitRangeLabel(range) + ' 的新词已经全部学过了，想学新的可以去"词书"页放宽背诵范围。</div>' : '';
+      var moreNew = remainingNewWords(state.activeBook) > 0
+        ? '<button class="btn btn-primary" data-act="more-new">再学 10 个新词</button>' : '';
       return '<div class="paper"><div class="done-screen">' +
         '<div class="big">🎉</div>' +
         '<div class="msg-line">今天的新词和复习任务都完成啦</div>' + rangeDone +
-        '<button class="btn btn-ghost" data-act="bonus-start">还想再多练几个（不计入今日目标）</button>' +
+        '<div class="btn-row">' + moreNew +
+          '<button class="btn btn-ghost" data-act="bonus-start">复习学过的词（不计入今日目标）</button>' +
+        '</div>' +
       '</div></div>';
     }
     var mode = ui.currentMode;
     var body = '';
     if(mode === 'en2zh'){
-      body += '<div class="fc-mode">英译中' + (w.unit ? ' · Unit ' + w.unit : '') + '</div>';
+      body += cardTag(w, '英译中');
       body += '<div class="fc-word">' + escapeHtml(w.en) + speakBtn('word') + '</div>';
+      body += renderPhonetic(w);
       // "不知道" answers without revealing first, so a graded card always shows the meaning.
       if(!ui.revealAnswer && !ui.feedback){
         body += '<div class="btn-row">' +
@@ -1043,6 +1116,7 @@
       } else {
         body += '<div class="fc-reveal">' + escapeHtml(w.zh) + '</div>';
         body += renderExample(w);
+        body += renderPhrases(w);
         if(!ui.feedback){
           body += '<div class="btn-row">' +
             '<button class="btn btn-green" data-act="self-correct">我答对了</button>' +
@@ -1051,13 +1125,10 @@
         }
       }
     } else {
-      body += '<div class="fc-mode">中译英' + (w.unit ? ' · Unit ' + w.unit : '') + '</div>';
+      body += cardTag(w, '中译英');
       body += '<div class="fc-word fc-word-zh">' + escapeHtml(w.zh) + '</div>';
-      // In 中译英, showing the example up-front could reveal the target word, so
-      // only show it once the user has answered (feedback is set).
-      if(ui.feedback){
-        body += renderExample(w);
-      }
+      // In 中译英, the example, phonetic and phrases all give the word away, so they're only
+      // shown once the user has answered — below the feedback line, which holds the answer.
       if(!ui.feedback){
         // autocorrect / suggestions off: the phone keyboard would otherwise fix a misspelling
         // (marked correct) or show the answer in its suggestion bar.
@@ -1074,6 +1145,7 @@
       // In 中译英 the English word only appears in the feedback, so its 🔊 goes there.
       var feedbackSpeak = (mode === 'zh2en' && ui.feedback.type === 'wrong') ? speakBtn('word') : '';
       body += '<div class="feedback ' + ui.feedback.type + '">' + escapeHtml(ui.feedback.text) + feedbackSpeak + '</div>';
+      if(mode === 'zh2en') body += renderPhonetic(w) + renderExample(w) + renderPhrases(w);
       if(ui.feedback.type === 'wrong'){
         body += '<div class="btn-row"><button class="btn btn-primary" data-act="next-card">' +
           (needsCopyTask(w) ? 'OK，去抄写' : 'OK，下一个') + '</button></div>';
@@ -1197,7 +1269,7 @@
       '</div>' +
       '<div class="field">' +
         '<label>每日新词目标</label>' +
-        '<div class="hint">每天最多学这么多个"没背过的新词"，学完之后会优先安排复习到期的词。参照艾宾浩斯记忆曲线，学过的词会在 1、2、4、7、15、30 天后依次安排复习，答对才会进入下一个更长的间隔，答错就退回第一天重新开始。这个数量是所有词书共用的。</div>' +
+        '<div class="hint">每天最多学这么多个"没背过的新词"，学完之后会优先安排复习到期的词。参照艾宾浩斯记忆曲线，学过的词会在 1、2、4、7、15、30 天后依次安排复习，答对才会进入下一个更长的间隔，答错就退回第一天重新开始；新学的词和答错的词，当天过几个词后还会再考一遍。这个数量是所有词书共用的。</div>' +
         '<input type="number" class="num-input" id="daily-goal-input" min="1" max="200" value="' + s.dailyNewGoal + '">' +
         '<div class="hint estimate" id="finish-estimate">' + finishEstimateText(state.activeBook, s.dailyNewGoal) + '</div>' +
         (unitRange(state.activeBook) ? '<div class="hint">只背某几个单元？在"词书"页这本书下面选背诵范围。</div>' : '') +
@@ -1218,6 +1290,15 @@
         '<div class="checkline"><input type="radio" name="copymode" id="copymode-type" value="type" ' + (s.copyMode==='type'?'checked':'') + '> 打字抄写（在格子里打对单词才算一遍）</div>' +
         '<div class="checkline"><input type="radio" name="copymode" id="copymode-handwrite" value="handwrite" ' + (s.copyMode==='handwrite'?'checked':'') + '> 手写抄写（在纸上抄，抄完点按钮确认）</div>' +
         '<div class="checkline"><input type="radio" name="copymode" id="copymode-off" value="off" ' + (s.copyMode==='off'?'checked':'') + '> 不抄写（答错就跳过，不罚抄，默认）</div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<label>备份学习记录</label>' +
+        '<div class="hint">学习记录只保存在这个浏览器里，清理浏览器数据或换手机就没了。定期导出一个备份文件存好，需要时再从备份恢复。</div>' +
+        '<div class="btn-row" style="justify-content:flex-start;margin-top:4px;">' +
+          '<button class="btn btn-primary" data-act="export-backup">导出备份</button>' +
+          '<label class="btn btn-ghost file-btn">从备份恢复<input type="file" id="import-backup" accept=".json,application/json" hidden></label>' +
+        '</div>' +
+        (ui.backupMsg ? '<div class="msg ' + ui.backupMsg.type + '">' + escapeHtml(ui.backupMsg.text) + '</div>' : '') +
       '</div>' +
       '<div class="btn-row" style="justify-content:flex-start;">' +
         '<button class="btn btn-ghost" data-act="reset-all">重置全部进度</button>' +
@@ -1256,7 +1337,7 @@
     app.querySelectorAll('.tab-btn').forEach(function(btn){
       btn.onclick = function(){
         ui.activeTab = btn.getAttribute('data-tab');
-        ui.currentWord = null; ui.feedback = null; ui.revealAnswer = false; ui.copyTask = null; ui.importMsg = null; ui.bonusMode = false;
+        ui.currentWord = null; ui.feedback = null; ui.revealAnswer = false; ui.copyTask = null; ui.importMsg = null; ui.backupMsg = null; ui.bonusMode = false;
         render();
       };
     });
@@ -1275,6 +1356,16 @@
 
     var bonusStart = app.querySelector('[data-act="bonus-start"]');
     if(bonusStart) bonusStart.onclick = function(){ ui.bonusMode = true; nextCard(); render(); };
+
+    // Done screen: 10 more new words, for today only (dailyProgress resets tomorrow).
+    var moreNew = app.querySelector('[data-act="more-new"]');
+    if(moreNew) moreNew.onclick = async function(){
+      ensureDailyProgress();
+      state.dailyProgress.extraNew = (state.dailyProgress.extraNew || 0) + 10;
+      await persist();
+      nextCard();
+      render();
+    };
 
     var revealBtn = app.querySelector('[data-act="reveal"]');
     if(revealBtn) revealBtn.onclick = function(){ ui.revealAnswer = true; render(); };
@@ -1457,6 +1548,49 @@
     app.querySelectorAll('#mode-en2zh, #mode-zh2en, input[name="copymode"]').forEach(function(el){
       el.addEventListener('change', function(){ saveSettingsForm(true); });
     });
+    // Backup: the whole saved state (progress, settings, imported words) plus the color theme,
+    // as a JSON file. Restoring replaces everything on this device.
+    var exportBtn = app.querySelector('[data-act="export-backup"]');
+    if(exportBtn) exportBtn.onclick = function(){
+      var data = JSON.stringify({ app: 'vocab-pwa', version: 1, exportedAt: new Date().toISOString(), theme: themeSetting(), state: state });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+      a.download = 'vocab-backup-' + todayStr() + '.json';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      var learned = state.words.filter(function(w){ return w.introducedDate; }).length;
+      ui.backupMsg = { type: 'ok', text: '已导出备份（' + learned + ' 个学过的词）。文件名是 ' + a.download + '，存到网盘或发给自己保存好。' };
+      render();
+    };
+    var importBackup = document.getElementById('import-backup');
+    if(importBackup) importBackup.addEventListener('change', function(e){
+      var file = e.target.files[0];
+      if(!file) return;
+      var reader = new FileReader();
+      reader.onload = async function(ev){
+        var parsed = null;
+        try{ parsed = JSON.parse(ev.target.result); }catch(err){}
+        var s = parsed && (parsed.state || parsed);
+        if(!s || !Array.isArray(s.words)){
+          ui.backupMsg = { type: 'warn', text: '这个文件不是本应用导出的备份，没有恢复。' };
+          render();
+          return;
+        }
+        var learned = s.words.filter(function(w){ return w.introducedDate; }).length;
+        if(!confirm('用这个备份（' + learned + ' 个学过的词）覆盖这台设备上现在的全部学习记录和设置吗？')) return;
+        state = s;
+        migrateState();
+        if(parsed.theme){ try{ localStorage.setItem(THEME_KEY, parsed.theme); }catch(err){} applyTheme(); }
+        await persist();
+        ui.currentWord = null; ui.feedback = null; ui.copyTask = null; ui.bonusMode = false;
+        ui.backupMsg = { type: 'ok', text: '已从备份恢复：' + learned + ' 个学过的词。' };
+        render();
+      };
+      reader.onerror = function(){ ui.backupMsg = { type: 'warn', text: '文件读取失败，请重试。' }; render(); };
+      reader.readAsText(file, 'UTF-8');
+    });
+
     var resetAll = app.querySelector('[data-act="reset-all"]');
     if(resetAll) resetAll.onclick = async function(){
       if(!confirm('确定要清空所有词书的学习进度（包括自建词库的内容）吗？此操作不可撤销。')) return;
